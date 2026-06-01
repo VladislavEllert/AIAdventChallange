@@ -12,8 +12,7 @@
 
 ## Что внутри
 
-- `bot.py` — Telegram-бот (основной вариант сдачи): текст → LLM → ответ в чат.
-- `main.py` — минимальный CLI (тот же запрос в консоль, для проверки API).
+- `bot.py` — Telegram-бот: текст → LLM → ответ в чат.
 
 ## Технические детали
 
@@ -35,18 +34,17 @@ pip install -r requirements.txt
 ## Запуск
 
 ```bash
-python bot.py      # Telegram-бот
-python main.py     # либо просто CLI-проверка API
+python bot.py
 ```
 
 ## Что сделать в Telegram (на твоей стороне)
 
 1. Открой **@BotFather** в Telegram.
 2. `/newbot` → задай имя бота и username (должен кончаться на `bot`).
-3. BotFather пришлёт **token** — впиши его в `.env` как `TELEGRAM_BOT_TOKEN`.
+3. BotFather пришлёт **token** → впиши его в `.env` как `TELEGRAM_BOT_TOKEN`.
 4. Запусти `python bot.py`.
 5. Открой своего бота по ссылке от BotFather → `/start` → пиши вопросы.
 
 ## Статус
 
-`todo` — код написан, ждёт ключи (ProxyAPI + BotFather) для запуска и видео.
+`todo` — код готов и проверен вживую, ждёт запись видео для сдачи.
