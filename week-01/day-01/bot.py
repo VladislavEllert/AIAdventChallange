@@ -28,7 +28,7 @@ from telegram.ext import (
 
 load_dotenv()
 
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini/gemini-2.5-flash-lite"
 
 client = OpenAI(
     api_key=os.environ["PROXYAPI_KEY"],

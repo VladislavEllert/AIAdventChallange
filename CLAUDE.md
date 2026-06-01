@@ -29,7 +29,10 @@
   - base_url: `https://openai.api.proxyapi.ru/v1` (единый, роутинг по имени модели)
   - Auth: заголовок `Authorization: Bearer <PROXYAPI_KEY>`
   - Ключ: в `.env` как `PROXYAPI_KEY` (НЕ коммитить, см. `.gitignore`).
-- Стартовая модель: `gemini-2.5-flash-lite` (дёшево, для экспериментов с параметрами).
+- Стартовая модель (рабочий id в ProxyAPI): `gemini/gemini-2.5-flash-lite` (дёшево).
+  - ВАЖНО: id моделей Gemini в ProxyAPI идут с префиксом `gemini/`. Без префикса → 400.
+  - `gemini-3.1-flash-lite` числится в списке моделей, но НЕ роутится (Vertex: "Model not supported"). Не использовать.
+  - Сверять рабочие id живым запросом `client.models.list()` + пробным вызовом, а не списком из доков.
 - VPS понадобится с 6-й недели.
 
 ## Git / безопасность

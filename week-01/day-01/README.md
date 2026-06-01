@@ -18,7 +18,8 @@
 ## Технические детали
 
 - API: ProxyAPI, OpenAI-совместимый. base_url `https://openai.api.proxyapi.ru/v1`.
-- Модель: `gemini-2.5-flash-lite`.
+- Модель: `gemini/gemini-2.5-flash-lite` (с префиксом `gemini/` — иначе 400).
+  Проверено вживую. `gemini-3.1-flash-lite` через ProxyAPI не работает.
 - Telegram: библиотека `python-telegram-bot` (async).
 - Ключи в `.env` (корень репо): `PROXYAPI_KEY`, `TELEGRAM_BOT_TOKEN`.
 

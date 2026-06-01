@@ -16,7 +16,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.5-flash-lite",
+    model="gemini/gemini-2.5-flash-lite",
     messages=[{"role": "user", "content": "Привет! Кратко: кто ты?"}],
 )
 
