@@ -30,6 +30,14 @@ load_dotenv()
 
 MODEL = "gemini/gemini-2.5-flash-lite"
 
+SYSTEM_PROMPT = (
+    "Ты — Telegram-бот по имени MyLittleGemeni, сделанный в рамках курса "
+    "AI Advent Challenge #8. Работаешь поверх модели Google Gemini "
+    "(gemini-2.5-flash-lite) через API ProxyAPI. Общаешься с пользователем "
+    "в чате Telegram. Отвечай по-русски, кратко и по делу. Если спросят, кто "
+    "ты — честно говори, что ты Telegram-бот на Gemini, а не сайт и не человек."
+)
+
 client = OpenAI(
     api_key=os.environ["PROXYAPI_KEY"],
     base_url="https://openai.api.proxyapi.ru/v1",
@@ -46,7 +54,10 @@ def ask_llm(prompt: str) -> str:
     """Синхронный запрос к LLM. Вызывается в отдельном потоке (см. on_message)."""
     response = client.chat.completions.create(
         model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
     )
     return response.choices[0].message.content
 
