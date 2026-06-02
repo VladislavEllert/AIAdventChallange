@@ -15,6 +15,8 @@ SYSTEM_B = (
 MAX_TOKENS_B = 150
 STOP_B = ["[КОНЕЦ]"]
 
+MAX_TOKENS_C = 20
+
 client = OpenAI(
     api_key=os.environ["PROXYAPI_KEY"],
     base_url="https://openai.api.proxyapi.ru/v1",
@@ -51,11 +53,13 @@ def main():
     )
     print_block("B: с ограничениями (формат + длина + stop)", text_b, usage_b)
 
+    text_c, usage_c = run([{"role": "user", "content": prompt}], max_tokens=MAX_TOKENS_C)
+    print_block("C: тупой обрыв (max_tokens=20, без формата)", text_c, usage_c)
+
     print(f"\n{'=' * 50}\nСводка выходных токенов\n{'=' * 50}")
-    print(f"A без ограничений: {usage_a.completion_tokens}")
-    print(f"B с ограничениями: {usage_b.completion_tokens}")
-    diff = usage_a.completion_tokens - usage_b.completion_tokens
-    print(f"Экономия B против A: {diff} токенов")
+    print(f"A без ограничений:  {usage_a.completion_tokens}")
+    print(f"B умный stop:       {usage_b.completion_tokens}")
+    print(f"C гильотина 20:     {usage_c.completion_tokens}")
 
 
 if __name__ == "__main__":
