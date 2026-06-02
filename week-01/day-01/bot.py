@@ -17,16 +17,16 @@ from telegram.ext import (
 load_dotenv()
 
 MODELS = [
-    ("gemini/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite ⚡"),
-    ("gemini/gemini-2.5-flash", "Gemini 2.5 Flash"),
-    ("openai/gpt-4o-mini", "GPT-4o mini"),
-    ("openai/gpt-4.1-mini", "GPT-4.1 mini"),
-    ("openai/gpt-4.1-nano", "GPT-4.1 nano"),
-    ("openai/gpt-5-nano", "GPT-5 nano"),
-    ("openai/gpt-3.5-turbo", "GPT-3.5 Turbo"),
+    ("gemini/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite ⚡", "26/129₽"),
+    ("gemini/gemini-2.5-flash", "Gemini 2.5 Flash", "78/645₽"),
+    ("openai/gpt-4o-mini", "GPT-4o mini", "39/155₽"),
+    ("openai/gpt-4.1-mini", "GPT-4.1 mini", "104/413₽"),
+    ("openai/gpt-4.1-nano", "GPT-4.1 nano", "26/104₽"),
+    ("openai/gpt-5-nano", "GPT-5 nano", "13/104₽"),
+    ("openai/gpt-3.5-turbo", "GPT-3.5 Turbo", "129/387₽"),
 ]
 DEFAULT_MODEL = MODELS[0][0]
-LABELS = dict(MODELS)
+LABELS = {model_id: label for model_id, label, _ in MODELS}
 
 SYSTEM_PROMPT = (
     "Ты — Telegram-бот MyLittleGemeni, сделанный в рамках курса AI Advent "
@@ -65,10 +65,10 @@ def current_model(context: ContextTypes.DEFAULT_TYPE) -> str:
 def model_keyboard(current: str) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(
-            ("✅ " if model_id == current else "") + label,
+            ("✅ " if model_id == current else "") + f"{label} ({price})",
             callback_data=model_id,
         )]
-        for model_id, label in MODELS
+        for model_id, label, price in MODELS
     ]
     return InlineKeyboardMarkup(rows)
 
@@ -83,7 +83,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def choose_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Выбери модель, с которой будешь общаться:",
+        "Выбери модель, с которой будешь общаться.\n"
+        "В скобках — цена: вход/выход ₽ за 1 млн токенов.",
         reply_markup=model_keyboard(current_model(context)),
     )
 
