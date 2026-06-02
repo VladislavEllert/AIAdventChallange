@@ -4,9 +4,10 @@ import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -15,13 +16,23 @@ from telegram.ext import (
 
 load_dotenv()
 
-MODEL = "gemini/gemini-2.5-flash-lite"
+MODELS = [
+    ("gemini/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite ⚡"),
+    ("gemini/gemini-2.5-flash", "Gemini 2.5 Flash"),
+    ("openai/gpt-4o-mini", "GPT-4o mini"),
+    ("openai/gpt-4.1-mini", "GPT-4.1 mini"),
+    ("openai/gpt-4.1-nano", "GPT-4.1 nano"),
+    ("openai/gpt-5-nano", "GPT-5 nano"),
+    ("openai/gpt-3.5-turbo", "GPT-3.5 Turbo"),
+]
+DEFAULT_MODEL = MODELS[0][0]
+LABELS = dict(MODELS)
+
 SYSTEM_PROMPT = (
-    "Ты — Telegram-бот по имени MyLittleGemeni, созданный в рамках курса "
-    "AI Advent Challenge #8. Работаешь поверх модели Google Gemini "
-    "(gemini-2.5-flash-lite) через API ProxyAPI. Общаешься с пользователем "
-    "в чате Telegram. Отвечай по-русски, кратко и по делу. Если спросят, кто "
-    "ты — честно говори, что ты Telegram-бот на Gemini, а не сайт и не человек."
+    "Ты — Telegram-бот MyLittleGemeni, сделанный в рамках курса AI Advent "
+    "Challenge #8. Работаешь через API ProxyAPI на модели, которую выбрал "
+    "пользователь. Отвечай по-русски, кратко и по делу. Если спросят, кто "
+    "ты — честно говори, что ты Telegram-бот, а не сайт и не человек."
 )
 
 logging.basicConfig(
@@ -36,9 +47,9 @@ client = OpenAI(
 )
 
 
-def ask_llm(prompt: str) -> str:
+def ask_llm(prompt: str, model: str) -> str:
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
@@ -47,23 +58,55 @@ def ask_llm(prompt: str) -> str:
     return response.choices[0].message.content
 
 
+def current_model(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("model", DEFAULT_MODEL)
+
+
+def model_keyboard(current: str) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(
+            ("✅ " if model_id == current else "") + label,
+            callback_data=model_id,
+        )]
+        for model_id, label in MODELS
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Привет! Я бот курса AI Advent на модели Gemini. "
-        "Напиши вопрос — пришлю ответ."
+        "Привет! Я бот курса AI Advent. Пиши вопрос — отвечу через выбранную модель.\n\n"
+        f"Текущая модель: {LABELS[current_model(context)]}\n"
+        "Сменить модель: /model"
     )
+
+
+async def choose_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "Выбери модель, с которой будешь общаться:",
+        reply_markup=model_keyboard(current_model(context)),
+    )
+
+
+async def on_model_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    model = query.data
+    context.user_data["model"] = model
+    await query.edit_message_text(f"Готово. Теперь общаешься с: {LABELS.get(model, model)}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     prompt = update.message.text
-    log.info("Запрос от %s: %s", update.effective_user.id, prompt)
+    model = current_model(context)
+    log.info("Запрос от %s [%s]: %s", update.effective_user.id, model, prompt)
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
     )
 
     try:
-        answer = await asyncio.to_thread(ask_llm, prompt)
+        answer = await asyncio.to_thread(ask_llm, prompt, model)
     except Exception as e:
         log.exception("Ошибка запроса к LLM")
         answer = f"Ошибка при запросе к нейросети: {e}"
@@ -71,9 +114,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(answer)
 
 
+async def setup_commands(app: Application) -> None:
+    await app.bot.set_my_commands([
+        ("start", "Запуск и текущая модель"),
+        ("model", "Выбрать модель"),
+    ])
+
+
 def main() -> None:
-    app = Application.builder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
+    app = (
+        Application.builder()
+        .token(os.environ["TELEGRAM_BOT_TOKEN"])
+        .post_init(setup_commands)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("model", choose_model))
+    app.add_handler(CallbackQueryHandler(on_model_selected))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     log.info("Бот запущен.")
