@@ -1,0 +1,229 @@
+import SwiftUI
+import PhotosUI
+import SwiftData
+
+struct ChatView: View {
+    let agentProfile: AgentProfile
+
+    @Environment(\.modelContext) private var context
+    @State private var vm = ChatViewModel()
+    @State private var showSettings = false
+    @State private var showChats = false
+    @State private var photoItem: PhotosPickerItem?
+
+    var body: some View {
+        GeometryReader { geo in
+            let drawerWidth = min(geo.size.width * 0.84, 340)
+            ZStack(alignment: .leading) {
+                VStack(spacing: 0) {
+                    messagesArea
+                    Divider()
+                    inputBar
+                }
+                .background(AmbientBackground())
+                .navigationTitle(vm.agentTitle)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { showChats = true } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                        }
+                    }
+                }
+                .sheet(isPresented: $showSettings) { SettingsView() }
+                .onAppear {
+                    vm.attach(context, profile: agentProfile)
+                    if !vm.hasKey { showSettings = true }
+                }
+                .onChange(of: photoItem) { Task { await loadPhoto() } }
+
+                if showChats {
+                    Color.black.opacity(0.35)
+                        .ignoresSafeArea()
+                        .onTapGesture { closeDrawer() }
+                }
+
+                ChatListView(
+                    agentID: agentProfile.id,
+                    currentID: vm.currentChatID,
+                    onSelect: { vm.open($0); closeDrawer() },
+                    onNew: { vm.newChat(); closeDrawer() },
+                    onClose: { closeDrawer() },
+                    onDeleted: { vm.chatDeleted($0) }
+                )
+                .frame(width: drawerWidth, alignment: .leading)
+                .frame(maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+                .offset(x: showChats ? 0 : -(drawerWidth + 12))
+                .shadow(color: .black.opacity(showChats ? 0.2 : 0), radius: 10, x: 2, y: 0)
+            }
+            .animation(.easeInOut(duration: 0.25), value: showChats)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let dx = value.translation.width
+                        let dy = abs(value.translation.height)
+                        guard abs(dx) > dy else { return }   // горизонтальный свайп
+                        if !showChats, value.startLocation.x < 40, dx > 60 {
+                            showChats = true
+                        } else if showChats, dx < -60 {
+                            showChats = false
+                        }
+                    }
+            )
+        }
+    }
+
+    private func closeDrawer() {
+        showChats = false
+    }
+
+    private var messagesArea: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if vm.messages.isEmpty {
+                        emptyState
+                    }
+                    ForEach(vm.messages) { message in
+                        MessageBubble(message: message)
+                            .id(message.id)
+                    }
+                    if vm.isLoading {
+                        TypingBubble().id("typing")
+                    }
+                    if let error = vm.errorText {
+                        errorBanner(error)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: vm.messages.count) { scrollToBottom(proxy) }
+            .onChange(of: vm.isLoading) { scrollToBottom(proxy) }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Text(agentProfile.emoji)
+                .font(.system(size: 56))
+            Text("Напиши \(agentProfile.name)")
+                .font(.headline)
+            Text("Он помнит весь диалог этого чата.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+    }
+
+    private func errorBanner(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(Color(.systemRed))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                Color(.systemRed).opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+    }
+
+    private var inputBar: some View {
+        VStack(spacing: 8) {
+            if let data = vm.attachedImage, let uiImage = UIImage(data: data) {
+                attachmentPreview(uiImage)
+            }
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 34, height: 34)
+                }
+
+                TextField("Сообщение…", text: $vm.input, axis: .vertical)
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(
+                        Color(.secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    )
+
+                Button {
+                    vm.send()
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(
+                            vm.canSend ? Color.accentColor : Color(.systemGray3),
+                            in: Circle()
+                        )
+                }
+                .disabled(!vm.canSend)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private func attachmentPreview(_ uiImage: UIImage) -> some View {
+        HStack {
+            ZStack(alignment: .topTrailing) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button {
+                    vm.attachedImage = nil
+                    photoItem = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white, .black.opacity(0.6))
+                }
+                .offset(x: 6, y: -6)
+            }
+            Spacer()
+        }
+    }
+
+    private func loadPhoto() async {
+        guard let item = photoItem,
+              let data = try? await item.loadTransferable(type: Data.self),
+              let uiImage = UIImage(data: data) else { return }
+        vm.attachedImage = Self.downscaledJPEG(uiImage)
+    }
+
+    private static func downscaledJPEG(_ image: UIImage, maxSide: CGFloat = 1024, quality: CGFloat = 0.6) -> Data? {
+        let size = image.size
+        let scale = min(1, maxSide / max(size.width, size.height))
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: target)
+        let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: target)) }
+        return resized.jpegData(compressionQuality: quality)
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            if vm.isLoading {
+                proxy.scrollTo("typing", anchor: .bottom)
+            } else if let last = vm.messages.last {
+                proxy.scrollTo(last.id, anchor: .bottom)
+            }
+        }
+    }
+}

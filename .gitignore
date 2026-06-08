@@ -8,3 +8,10 @@ node_modules/
 .idea/
 .vscode/
 .claude/settings.local.json
+
+# Xcode / iOS
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+Secrets.xcconfig
