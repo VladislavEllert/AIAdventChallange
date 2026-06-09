@@ -5,13 +5,35 @@ import SwiftData
 struct ChatView: View {
     let agentProfile: AgentProfile
 
+    private enum ActiveSheet: Identifiable {
+        case settings
+        case export(String)
+        var id: Int {
+            switch self {
+            case .settings: return 0
+            case .export: return 1
+            }
+        }
+    }
+
     @Environment(\.modelContext) private var context
     @State private var vm = ChatViewModel()
-    @State private var showSettings = false
+    @State private var activeSheet: ActiveSheet?
     @State private var showChats = false
-    @State private var showExport = false
-    @State private var exportText = ""
     @State private var photoItem: PhotosPickerItem?
+    @State private var draft = ""
+
+    private var canSend: Bool {
+        let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return (hasText || vm.attachedImage != nil) && !vm.isLoading
+    }
+
+    private func submit() {
+        guard canSend else { return }
+        let text = draft
+        draft = ""
+        vm.send(text: text)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -34,12 +56,11 @@ struct ChatView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Button {
-                                exportText = vm.exportJSON()
-                                showExport = true
+                                activeSheet = .export(vm.exportJSON())
                             } label: {
                                 Label("Экспорт памяти (JSON)", systemImage: "curlybraces")
                             }
-                            Button { showSettings = true } label: {
+                            Button { activeSheet = .settings } label: {
                                 Label("Настройки", systemImage: "gearshape")
                             }
                         } label: {
@@ -47,11 +68,15 @@ struct ChatView: View {
                         }
                     }
                 }
-                .sheet(isPresented: $showSettings) { SettingsView() }
-                .sheet(isPresented: $showExport) { MemoryExportSheet(json: exportText) }
+                .sheet(item: $activeSheet) { sheet in
+                    switch sheet {
+                    case .settings: SettingsView()
+                    case .export(let json): MemoryExportSheet(json: json)
+                    }
+                }
                 .onAppear {
                     vm.attach(context, profile: agentProfile)
-                    if !vm.hasKey { showSettings = true }
+                    if !vm.hasKey { activeSheet = .settings }
                 }
                 .onDisappear { vm.extractFactsOnLeave() }
                 .onChange(of: photoItem) { Task { await loadPhoto() } }
@@ -173,7 +198,7 @@ struct ChatView: View {
                         .frame(width: 34, height: 34)
                 }
 
-                TextField("Сообщение…", text: $vm.input, axis: .vertical)
+                TextField("Сообщение…", text: $draft, axis: .vertical)
                     .lineLimit(1...5)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -183,18 +208,18 @@ struct ChatView: View {
                     )
 
                 Button {
-                    vm.send()
+                    submit()
                 } label: {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
                         .background(
-                            vm.canSend ? Color.accentColor : Color(.systemGray3),
+                            canSend ? Color.accentColor : Color(.systemGray3),
                             in: Circle()
                         )
                 }
-                .disabled(!vm.canSend)
+                .disabled(!canSend)
             }
         }
         .padding(.horizontal, 12)

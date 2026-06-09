@@ -32,16 +32,10 @@ extension AgentProfile {
         let prompt: String
     }
 
+    /// Встроенные агенты, которые надо удалить у тех, у кого они уже засеяны.
+    private static let deprecatedBuiltIns: Set<String> = ["Аладдин"]
+
     private static let builtInPresets: [Preset] = [
-        Preset(
-            name: "Аладдин",
-            emoji: "🧞",
-            prompt: """
-            Тебя зовут Аладдин. Ты — тёплый, неформальный собеседник и друг. Общаешься \
-            по-человечески, на «ты», без морализаторства и канцелярита. Отвечай живо и по \
-            делу, можно с лёгким юмором. Если чего-то не знаешь — честно скажи, не выдумывай.
-            """
-        ),
         Preset(
             name: "Акс",
             emoji: "🧠",
@@ -64,7 +58,7 @@ extension AgentProfile {
         )
     ]
 
-    /// Досоздать недостающие встроенные агенты (идемпотентно — работает и при апдейте).
+    /// Досоздать недостающие встроенные агенты (идемпотентно) + убрать устаревшие.
     static func ensureBuiltIns(_ context: ModelContext) {
         let existing = (try? context.fetch(
             FetchDescriptor<AgentProfile>(predicate: #Predicate { $0.isBuiltIn })
@@ -78,6 +72,17 @@ extension AgentProfile {
                 systemPrompt: preset.prompt,
                 isBuiltIn: true
             ))
+        }
+
+        // Удалить устаревшие встроенные агенты (+ их чаты).
+        for agent in existing where deprecatedBuiltIns.contains(agent.name) {
+            let agentID: UUID? = agent.id
+            if let chats = try? context.fetch(
+                FetchDescriptor<ChatSession>(predicate: #Predicate { $0.agentID == agentID })
+            ) {
+                chats.forEach { context.delete($0) }
+            }
+            context.delete(agent)
         }
     }
 }

@@ -40,7 +40,8 @@ struct MemoryService {
         Выдели стойкие факты о ПОЛЬЗОВАТЕЛЕ из диалога: имя, что любит/не любит, \
         предпочтения, контекст жизни, договорённости. Каждый факт — короткая строка. \
         Только НОВЫЕ факты, по одному на строку, без нумерации и лишнего текста. \
-        Если новых фактов нет — верни пустой ответ.
+        Объединяй близкое, не дроби на мелочи. \
+        Если новых фактов нет — верни ПУСТОЙ ответ (ничего, ни слова, без фраз вроде «нет фактов»).
         """
         let body = "Уже известные факты:\n"
             + (known.isEmpty ? "—" : known.joined(separator: "\n"))
@@ -110,6 +111,10 @@ struct MemoryService {
             }
             guard fact.count >= 3 else { continue }
             let lower = fact.lowercased()
+            // отсеять no-op ответы модели («нет новых фактов» и т.п.)
+            if lower.hasPrefix("нет ") || lower.contains("новых фактов") || lower == "—" || lower == "-" {
+                continue
+            }
             guard !knownLower.contains(lower), !seen.contains(lower) else { continue }
             seen.insert(lower)
             result.append(fact)

@@ -54,6 +54,50 @@ system, который уходит в LLM =
 4. **Сжатие:** длинный чат (>12 сообщений) → меню → JSON-экспорт → видно `summary`
    + окно последних сообщений (а не вся история).
 
+## Архитектура памяти (3 механизма)
+
+Не путать — это три РАЗНЫХ слоя:
+
+**1. Окно последних N=12 — живой контекст ответа.**
+Когда агент отвечает, в модель уходит `персона + самознание + факты + summary +
+последние 12 сообщений`, а не вся история. Окно собирается в
+`ChatViewModel.open()` (последние N из SQLite) и шлётся в `Agent.respond()`.
+
+**2. Сжатие (summary) — старое за окном.**
+Что выпадает за окно → дешёвый вызов сжимает в `ChatSession.summary` (роллинг,
+копится). `ChatViewModel.compressIfNeeded()` → `MemoryService.summarize()`.
+Экономит токены, держит суть длинного диалога.
+
+**3. Долгая память (факты) — между чатами/сессиями.**
+Отдельный «экстрактор» по ВСЕМУ диалогу при уходе из чата
+(`ChatViewModel.extractFactsOnLeave()` → `MemoryService.extractFacts()`,
+дешёвая модель), + ручное «Запомнить» (`ChatViewModel.remember()`, без LLM).
+Факты дедупятся, лежат в `AgentProfile.facts` (SQLite) и инжектятся в `system`
+КАЖДОГО чата агента (`Agent.composedSystem()`).
+
+Плюс **самознание**: всем агентам в `system` добавлен блок про то, как устроена
+их память (`Agent.selfKnowledge`) — агент честно объясняет себя, не врёт «всё
+забываю в новом чате».
+
+```
+ты пишешь ──► [окно 12] + summary + facts ──► LLM ──► ответ
+                   │
+            выходишь из чата
+                   ▼
+        экстрактор (весь диалог) ──► новые факты ──► AgentProfile.facts (навсегда)
+```
+
+Все мета-вызовы (summary, извлечение фактов) — на `gemini/gemini-2.5-flash-lite`
+и редко (cost-sensitive). Ручные факты — без LLM.
+
+## Важные ссылки на код (для проверяющих)
+
+- **[MemoryService.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Services/MemoryService.swift)** — `summarize` (сжатие), `extractFacts` (извлечение фактов + дедуп), `exportJSON`.
+- **[Agent.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Agent/Agent.swift)** — `composedSystem()` (персона + самознание + факты + summary), `respond()`.
+- **[ChatViewModel.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/ViewModels/ChatViewModel.swift)** — `open()` (окно+восстановление), `compressIfNeeded()`, `extractFactsOnLeave()`, `remember()`.
+- **[ChatSession.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Models/ChatSession.swift)** — SQLite-модели `ChatSession`(+`summary`)/`StoredMessage`.
+- **[AgentProfile.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Models/AgentProfile.swift)** — `facts` (долгая память на агента).
+
 ## Хранение: SQLite, не JSON-файл
 
 Контекст лежит в SQLite (SwiftData, файл `default.store` в контейнере app), не в

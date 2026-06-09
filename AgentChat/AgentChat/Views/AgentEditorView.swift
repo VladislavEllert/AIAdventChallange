@@ -14,7 +14,7 @@ struct AgentEditorView: View {
     init(agent: AgentProfile? = nil) {
         self.agent = agent
         _name = State(initialValue: agent?.name ?? "")
-        _emoji = State(initialValue: agent?.emoji ?? "🤖")
+        _emoji = State(initialValue: agent?.emoji ?? "")
         _systemPrompt = State(initialValue: agent?.systemPrompt ?? "")
     }
 
@@ -32,7 +32,7 @@ struct AgentEditorView: View {
                     TextField("Например: Шеф-повар", text: $name)
                 }
                 Section("Эмодзи") {
-                    TextField("🤖", text: $emoji)
+                    TextField("Эмодзи", text: $emoji)
                         .onChange(of: emoji) {
                             if let last = emoji.last { emoji = String(last) } else { emoji = "" }
                         }
@@ -66,7 +66,7 @@ struct AgentEditorView: View {
 
     private func save() {
         let finalName = name.trimmingCharacters(in: .whitespaces)
-        let finalEmoji = emoji.isEmpty ? "🤖" : emoji
+        let finalEmoji = emoji.isEmpty ? "🙂" : emoji
         let finalPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let agent {

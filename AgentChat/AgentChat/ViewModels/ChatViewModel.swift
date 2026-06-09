@@ -16,7 +16,6 @@ final class ChatViewModel {
     private var lastExtractCount = 0
 
     var messages: [ChatMessage] = []
-    var input: String = ""
     var attachedImage: Data?
     var isLoading = false
     var errorText: String?
@@ -27,11 +26,6 @@ final class ChatViewModel {
 
     private var selectedModelID: String {
         UserDefaults.standard.string(forKey: "selectedModelID") ?? LLMModel.defaultModel.id
-    }
-
-    var canSend: Bool {
-        let hasText = !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return (hasText || attachedImage != nil) && !isLoading
     }
 
     /// Привязать хранилище + агента, открыть его последний чат (или новый).
@@ -90,15 +84,14 @@ final class ChatViewModel {
         }
     }
 
-    func send() {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    func send(text rawText: String) {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = attachedImage
         guard (!text.isEmpty || image != nil), !isLoading else { return }
         guard let context, let agent else { return }
         if chat == nil { newChat() }
         guard let chat else { return }
 
-        input = ""
         attachedImage = nil
         errorText = nil
         agent.model = selectedModelID

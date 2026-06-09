@@ -10,7 +10,7 @@ struct MemoryExportSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(json)
+                Text(json.isEmpty ? "{}" : json)
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
