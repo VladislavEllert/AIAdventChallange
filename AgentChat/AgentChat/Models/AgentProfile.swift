@@ -64,7 +64,7 @@ extension AgentProfile {
             ))
         }
 
-        // Удалить устаревшие встроенные агенты (+ их чаты).
+        // Удалить устаревшие встроенные агенты по точному имени (+ их чаты).
         for agent in existing where deprecatedBuiltIns.contains(agent.name) {
             let agentID: UUID? = agent.id
             if let chats = try? context.fetch(
@@ -73,6 +73,14 @@ extension AgentProfile {
                 chats.forEach { context.delete($0) }
             }
             context.delete(agent)
+        }
+
+        // Осиротевшие встроенные (переименованные/кастомные, не из пресетов и не в deprecated)
+        // → перевести в «Свой»: их можно удалять, они не висят как «Встроенный».
+        let presetNames = Set(builtInPresets.map { $0.name })
+        for agent in existing
+        where !deprecatedBuiltIns.contains(agent.name) && !presetNames.contains(agent.name) {
+            agent.isBuiltIn = false
         }
     }
 }
