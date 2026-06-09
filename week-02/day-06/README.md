@@ -74,4 +74,4 @@ M8 бэкенд VPS (неделя 6).
 
 - Спека приложения: [`memory-bank/ios-agent-app/README.md`](../../memory-bank/ios-agent-app/README.md)
 - Милстоуны: [`memory-bank/ios-agent-app/milestones.md`](../../memory-bank/ios-agent-app/milestones.md)
-- Видео: _TODO_
+- Видео: [▶ Google Drive](https://drive.google.com/file/d/1oxYBNidlMzq5eve09l61oSuv6t2t1pWy/view?usp=sharing)
