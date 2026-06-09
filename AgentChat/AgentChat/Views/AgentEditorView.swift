@@ -45,6 +45,10 @@ struct AgentEditorView: View {
                 } footer: {
                     Text("Опиши, кто этот агент и как себя ведёт. Это его личность.")
                 }
+
+                if let agent {
+                    FactsSection(agent: agent)
+                }
             }
             .navigationTitle(isEditing ? "Редактировать" : "Новый агент")
             .navigationBarTitleDisplayMode(.inline)
@@ -78,5 +82,44 @@ struct AgentEditorView: View {
             ))
         }
         dismiss()
+    }
+}
+
+/// Долгая память агента: список фактов о пользователе (добавить/удалить).
+private struct FactsSection: View {
+    @Bindable var agent: AgentProfile
+    @State private var newFact = ""
+
+    var body: some View {
+        Section {
+            ForEach(agent.facts, id: \.self) { fact in
+                Text(fact)
+            }
+            .onDelete { offsets in
+                agent.facts.remove(atOffsets: offsets)
+            }
+            HStack {
+                TextField("Добавить факт", text: $newFact)
+                Button {
+                    add()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .disabled(newFact.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text("Память (факты о пользователе)")
+        } footer: {
+            Text("Эти факты агент помнит во всех своих чатах. Наполняется вручную и авто-извлечением.")
+        }
+    }
+
+    private func add() {
+        let fact = newFact.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fact.isEmpty else { return }
+        if !agent.facts.contains(where: { $0.lowercased() == fact.lowercased() }) {
+            agent.facts.append(fact)
+        }
+        newFact = ""
     }
 }

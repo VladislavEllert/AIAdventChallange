@@ -11,6 +11,8 @@ final class AgentProfile {
     var systemPrompt: String
     var isBuiltIn: Bool
     var createdAt: Date
+    /// Долгая память: стойкие факты о пользователе. Живут между чатами этого агента.
+    var facts: [String] = []
 
     init(name: String, emoji: String, systemPrompt: String, isBuiltIn: Bool = false) {
         self.id = UUID()
@@ -19,6 +21,7 @@ final class AgentProfile {
         self.systemPrompt = systemPrompt
         self.isBuiltIn = isBuiltIn
         self.createdAt = Date()
+        self.facts = []
     }
 }
 

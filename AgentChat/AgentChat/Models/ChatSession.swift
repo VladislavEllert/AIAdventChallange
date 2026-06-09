@@ -8,6 +8,8 @@ final class ChatSession {
     var title: String
     var createdAt: Date
     var agentID: UUID?
+    /// Сжатая выжимка старой части диалога (компрессия контекста).
+    var summary: String?
     @Relationship(deleteRule: .cascade, inverse: \StoredMessage.chat)
     var messages: [StoredMessage]
 
@@ -16,6 +18,7 @@ final class ChatSession {
         self.title = title
         self.createdAt = Date()
         self.agentID = agentID
+        self.summary = nil
         self.messages = []
     }
 

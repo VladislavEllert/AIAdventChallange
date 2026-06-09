@@ -5,10 +5,15 @@ import Observation
 @MainActor
 @Observable
 final class ChatViewModel {
+    /// Сколько последних сообщений держим в окне (остальное → summary).
+    private let window = 12
+
     private var context: ModelContext?
     private(set) var profile: AgentProfile?
     private var agent: Agent?
     private(set) var chat: ChatSession?
+    private let memory = MemoryService()
+    private var lastExtractCount = 0
 
     var messages: [ChatMessage] = []
     var input: String = ""
@@ -35,6 +40,7 @@ final class ChatViewModel {
         self.context = context
         self.profile = profile
         self.agent = Agent(profile: profile, model: selectedModelID)
+        self.agent?.facts = profile.facts
 
         if let last = latestChat() {
             open(last)
@@ -50,16 +56,25 @@ final class ChatViewModel {
         context.insert(session)
         chat = session
         messages = []
-        agent?.loadHistory([])
+        lastExtractCount = 0
+        agent?.facts = profile.facts
+        agent?.summary = nil
+        agent?.setWindow([])
     }
 
     func open(_ session: ChatSession) {
         chat = session
         let stored = session.sortedMessages
         messages = stored.map { $0.asChatMessage }
-        agent?.loadHistory(stored.map {
+        lastExtractCount = messages.count
+
+        agent?.facts = profile?.facts ?? []
+        agent?.summary = session.summary
+        // в модель уходит только окно последних N; старое — в summary
+        let windowMsgs = stored.suffix(window).map {
             ChatMessage(role: $0.role, content: $0.content.isEmpty ? "[фото]" : $0.content)
-        })
+        }
+        agent?.setWindow(Array(windowMsgs))
     }
 
     /// Чат удалён извне (из списка). Если это текущий — переключиться на другой/новый.
@@ -70,7 +85,7 @@ final class ChatViewModel {
         } else {
             chat = nil
             messages = []
-            agent?.loadHistory([])
+            agent?.setWindow([])
             newChat()
         }
     }
@@ -100,12 +115,60 @@ final class ChatViewModel {
                 let answer = try await agent.respond(to: text, imageData: image)
                 messages.append(ChatMessage(role: .assistant, content: answer))
                 persist(role: .assistant, content: answer, imageData: nil, to: chat, context: context)
+                await compressIfNeeded(chat: chat)
             } catch {
                 errorText = error.localizedDescription
             }
             isLoading = false
             try? context.save()
         }
+    }
+
+    /// Если окно переросло лимит — сжать старое в summary, оставить последние N.
+    private func compressIfNeeded(chat: ChatSession) async {
+        guard let agent, agent.history.count > window else { return }
+        let overflow = Array(agent.history.prefix(agent.history.count - window))
+        let keep = Array(agent.history.suffix(window))
+        guard let newSummary = try? await memory.summarize(previous: chat.summary, overflow: overflow) else { return }
+        chat.summary = newSummary
+        agent.summary = newSummary
+        agent.setWindow(keep)
+    }
+
+    /// Ручная долгая память: положить факт в копилку агента.
+    func remember(_ text: String) {
+        guard let profile else { return }
+        let fact = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fact.isEmpty else { return }
+        guard !profile.facts.contains(where: { $0.lowercased() == fact.lowercased() }) else { return }
+        profile.facts.append(fact)
+        agent?.facts = profile.facts
+        try? context?.save()
+    }
+
+    /// Авто-извлечение фактов при уходе из чата (дешёвая модель, 1 раз на новые сообщения).
+    func extractFactsOnLeave() {
+        guard let profile, let agent, hasKey, messages.count > lastExtractCount else { return }
+        let snapshot = messages
+        let known = profile.facts
+        lastExtractCount = messages.count
+        Task {
+            guard let newFacts = try? await memory.extractFacts(messages: snapshot, known: known), !newFacts.isEmpty else { return }
+            profile.facts.append(contentsOf: newFacts)
+            agent.facts = profile.facts
+            try? context?.save()
+        }
+    }
+
+    /// JSON-снимок памяти/контекста — для наглядности.
+    func exportJSON() -> String {
+        guard let profile else { return "{}" }
+        return memory.exportJSON(
+            agentName: "\(profile.name) \(profile.emoji)",
+            facts: profile.facts,
+            summary: chat?.summary,
+            messages: messages
+        )
     }
 
     private func latestChat() -> ChatSession? {

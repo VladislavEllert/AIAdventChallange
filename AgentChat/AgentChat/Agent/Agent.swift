@@ -11,6 +11,10 @@ final class Agent {
     var model: String
     var params: GenerationParams
 
+    /// Долгая память (факты о юзере) и сжатая выжимка старого — слои контекста.
+    var facts: [String] = []
+    var summary: String?
+
     private let client: ProxyAPIClient
     private(set) var history: [ChatMessage] = []
 
@@ -37,7 +41,7 @@ final class Agent {
     func respond(to userInput: String, imageData: Data? = nil) async throws -> String {
         let imageURL = imageData.map { "data:image/jpeg;base64,\($0.base64EncodedString())" }
 
-        var requests: [ChatMessageRequest] = [ChatMessageRequest(role: .system, text: systemPrompt, imageDataURL: nil)]
+        var requests: [ChatMessageRequest] = [ChatMessageRequest(role: .system, text: composedSystem(), imageDataURL: nil)]
         requests += history.map { ChatMessageRequest(role: $0.role, text: $0.content, imageDataURL: nil) }
         requests.append(ChatMessageRequest(role: .user, text: userInput, imageDataURL: imageURL))
 
@@ -58,6 +62,23 @@ final class Agent {
     /// Загрузить историю из сохранённого чата (при переключении чатов).
     func loadHistory(_ messages: [ChatMessage]) {
         history = messages
+    }
+
+    /// Заменить окно истории (после сжатия старого в summary).
+    func setWindow(_ messages: [ChatMessage]) {
+        history = messages
+    }
+
+    /// system = персона + долгие факты + summary старого.
+    private func composedSystem() -> String {
+        var text = systemPrompt
+        if !facts.isEmpty {
+            text += "\n\nЧто ты помнишь о пользователе:\n" + facts.map { "- \($0)" }.joined(separator: "\n")
+        }
+        if let summary, !summary.isEmpty {
+            text += "\n\nКраткое содержание предыдущей части диалога:\n\(summary)"
+        }
+        return text
     }
 }
 

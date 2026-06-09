@@ -9,6 +9,8 @@ struct ChatView: View {
     @State private var vm = ChatViewModel()
     @State private var showSettings = false
     @State private var showChats = false
+    @State private var showExport = false
+    @State private var exportText = ""
     @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
@@ -30,16 +32,28 @@ struct ChatView: View {
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape")
+                        Menu {
+                            Button {
+                                exportText = vm.exportJSON()
+                                showExport = true
+                            } label: {
+                                Label("Экспорт памяти (JSON)", systemImage: "curlybraces")
+                            }
+                            Button { showSettings = true } label: {
+                                Label("Настройки", systemImage: "gearshape")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
                         }
                     }
                 }
                 .sheet(isPresented: $showSettings) { SettingsView() }
+                .sheet(isPresented: $showExport) { MemoryExportSheet(json: exportText) }
                 .onAppear {
                     vm.attach(context, profile: agentProfile)
                     if !vm.hasKey { showSettings = true }
                 }
+                .onDisappear { vm.extractFactsOnLeave() }
                 .onChange(of: photoItem) { Task { await loadPhoto() } }
 
                 if showChats {
@@ -93,6 +107,15 @@ struct ChatView: View {
                     ForEach(vm.messages) { message in
                         MessageBubble(message: message)
                             .id(message.id)
+                            .contextMenu {
+                                if !message.content.isEmpty {
+                                    Button {
+                                        vm.remember(message.content)
+                                    } label: {
+                                        Label("Запомнить", systemImage: "brain")
+                                    }
+                                }
+                            }
                     }
                     if vm.isLoading {
                         TypingBubble().id("typing")
