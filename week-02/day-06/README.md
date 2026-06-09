@@ -1,5 +1,9 @@
 # День 6 — Первый агент (iOS)
 
+> ⭐ **Главный код задания (логика вызова: агент → LLM):**
+> - **[Agent.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Agent/Agent.swift)** — агент-сущность, `respond()` собирает контекст (`system + история + user`) и зовёт транспорт. Логика инкапсулирована здесь.
+> - **[ProxyAPIClient.swift](https://github.com/VladislavEllert/AIAdventChallange/blob/main/AgentChat/AgentChat/Networking/ProxyAPIClient.swift)** — сам HTTP-вызов LLM (URLSession → ProxyAPI), про агентов не знает.
+
 Старт недели 2 (агенты). Реализован **агент как отдельная сущность**, а не голый
 вызов API: логика запрос/ответ инкапсулирована внутри типа `Agent`. Интерфейс —
 нативное iOS-приложение **AgentChat** (SwiftUI), которое ходит в LLM через ProxyAPI.
