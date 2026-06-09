@@ -15,8 +15,10 @@
 │   ├── 00-overview.md
 │   ├── principles.md
 │   ├── progress.md
+│   ├── ios-agent-app/   # спека приложения AgentChat
 │   └── lessons/
-└── week-XX/day-YY/      # задания по дням
+├── week-XX/day-YY/      # задания по дням (README + код/заметки)
+└── AgentChat/           # iOS-приложение (неделя 2+): мульти-агентный чат на ProxyAPI
 ```
 
 ## Прогресс
@@ -26,3 +28,17 @@
 | 01 | 01 | Первый запрос к LLM через API (Telegram-бот на Gemini) | done | [week-01/day-01](week-01/day-01/) | [▶](https://www.loom.com/share/45330da8e4494e6ca49480a3420ff787) |
 | 01 | 02 | Формат ответа: сравнение без/с ограничениями (формат, длина, stop) | done | [week-01/day-02](week-01/day-02/) | [▶](https://www.loom.com/share/866d3823571646c698e02f7b201d084b) |
 | 01 | 03 | Разные способы рассуждения: 4 метода на задаче-ловушке «автомойка» | done | [week-01/day-03](week-01/day-03/) | [▶](https://www.loom.com/share/20f5f9c908834b5581588171f83c1cc2) |
+| 01 | 04 | Температура: сравнение 0/0.7/1.2 (+top_p/top_k), точность ↔ креатив | done | [week-01/day-04](week-01/day-04/) | [▶](https://www.loom.com/share/70d345242d1446a8ada8343cbc50eb83) |
+| 01 | 05 | Версии моделей: 1 промпт на 4 GPT, замер latency/токенов/₽ | done | [week-01/day-05](week-01/day-05/) | [▶](https://www.loom.com/share/80198dddfa8644c5b92ebf0823304d0c) |
+| 02 | 06 | Первый агент: iOS-приложение **AgentChat** (мульти-агент, ProxyAPI) | done | [week-02/day-06](week-02/day-06/) · [AgentChat](AgentChat/) | _TODO_ |
+
+## Приложение AgentChat (неделя 2)
+
+Нативное iOS-приложение (SwiftUI, iOS 17+): мульти-агентный чат поверх ProxyAPI.
+Агент — отдельная сущность с личностью, памятью и инкапсулированной логикой вызова LLM.
+
+Ключевой код:
+- [`Agent.swift`](AgentChat/AgentChat/Agent/Agent.swift) — агент-сущность, `respond()` собирает контекст и зовёт транспорт.
+- [`ProxyAPIClient.swift`](AgentChat/AgentChat/Networking/ProxyAPIClient.swift) — сам HTTP-вызов LLM (URLSession → ProxyAPI), про агентов не знает.
+
+Спека и план: [`memory-bank/ios-agent-app/`](memory-bank/ios-agent-app/). Запуск — см. [`week-02/day-06/README.md`](week-02/day-06/README.md).
