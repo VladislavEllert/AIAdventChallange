@@ -34,18 +34,23 @@ struct MemoryService {
         )
     }
 
-    /// Вытащить новые стойкие факты о пользователе (дедуп против известных).
-    func extractFacts(messages: [ChatMessage], known: [String]) async throws -> [String] {
+    /// Обновить факты о пользователе по новому диалогу: добавить новое, ЗАМЕНИТЬ
+    /// изменившееся (возраст, город, статус), объединить дубли, убрать противоречия.
+    /// Возвращает ПОЛНЫЙ обновлённый список (не только новое).
+    func updatedFacts(known: [String], messages: [ChatMessage]) async throws -> [String] {
         let system = """
-        Выдели стойкие факты о ПОЛЬЗОВАТЕЛЕ из диалога: имя, что любит/не любит, \
-        предпочтения, контекст жизни, договорённости. Каждый факт — короткая строка. \
-        Только НОВЫЕ факты, по одному на строку, без нумерации и лишнего текста. \
-        Объединяй близкое, не дроби на мелочи. \
-        Если новых фактов нет — верни ПУСТОЙ ответ (ничего, ни слова, без фраз вроде «нет фактов»).
+        Тебе дан список текущих фактов о пользователе и новый диалог. Верни ОБНОВЛЁННЫЙ \
+        полный список фактов:
+        - добавь новые факты из диалога;
+        - ЗАМЕНИ изменившиеся (например возраст, город, статус — новое значение вместо старого);
+        - объедини дубли и близкое по смыслу;
+        - убери устаревшее и противоречивое.
+        По одному факту на строку, без нумерации, кратко. Только реальные факты, не выдумывай. \
+        Сохрани все актуальные факты, не теряй важное. До ~20 фактов.
         """
-        let body = "Уже известные факты:\n"
+        let body = "Текущие факты:\n"
             + (known.isEmpty ? "—" : known.joined(separator: "\n"))
-            + "\n\nДиалог:\n" + transcript(messages)
+            + "\n\nНовый диалог:\n" + transcript(messages)
 
         let requests = [
             ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
@@ -54,9 +59,10 @@ struct MemoryService {
         let raw = try await client.complete(
             messages: requests,
             model: cheapModel,
-            params: GenerationParams(temperature: 0.2, maxTokens: 250)
+            params: GenerationParams(temperature: 0.2, maxTokens: 500)
         )
-        return parseFacts(raw, known: known)
+        let updated = parseFacts(raw, known: [])
+        return updated.isEmpty ? known : updated   // safety: не теряем память
     }
 
     /// Почистить список фактов: объединить дубли/близкое, убрать устаревшее и

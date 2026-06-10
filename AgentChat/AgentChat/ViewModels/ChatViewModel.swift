@@ -146,15 +146,10 @@ final class ChatViewModel {
         let known = profile.facts
         lastExtractCount = messages.count
         Task {
-            if let newFacts = try? await memory.extractFacts(messages: snapshot, known: known), !newFacts.isEmpty {
-                profile.facts.append(contentsOf: newFacts)
-                agent.facts = profile.facts
-            }
-            // авто-чистка при переполнении: агент сам мёржит дубли/убирает устаревшее
-            if profile.facts.count > 30, let cleaned = try? await memory.consolidate(facts: profile.facts) {
-                profile.facts = cleaned
-                agent.facts = cleaned
-            }
+            // обновлённый ПОЛНЫЙ список: новое добавит, изменившееся заменит, дубли смёржит
+            guard let updated = try? await memory.updatedFacts(known: known, messages: snapshot) else { return }
+            profile.facts = updated
+            agent.facts = updated
             try? context?.save()
         }
     }
