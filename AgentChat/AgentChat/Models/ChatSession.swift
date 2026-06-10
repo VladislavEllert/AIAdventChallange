@@ -35,18 +35,39 @@ final class StoredMessage {
     var imageData: Data?
     var createdAt: Date
     var chat: ChatSession?
+    // Расход токенов и время ответа (для ответа модели). Переживают перезапуск.
+    var promptTokens: Int?
+    var completionTokens: Int?
+    var reasoningTokens: Int?
+    var responseTime: Double?
+    var modelID: String?
 
-    init(role: Role, content: String, imageData: Data? = nil) {
+    init(role: Role, content: String, imageData: Data? = nil, usage: TokenUsage? = nil, responseTime: Double? = nil, modelID: String? = nil) {
         self.id = UUID()
         self.roleRaw = role.rawValue
         self.content = content
         self.imageData = imageData
         self.createdAt = Date()
+        self.promptTokens = usage?.promptTokens
+        self.completionTokens = usage?.completionTokens
+        self.reasoningTokens = usage?.reasoningTokens
+        self.responseTime = responseTime
+        self.modelID = modelID
     }
 
     var role: Role { Role(rawValue: roleRaw) ?? .user }
 
+    var usage: TokenUsage? {
+        guard let promptTokens, let completionTokens else { return nil }
+        return TokenUsage(
+            promptTokens: promptTokens,
+            completionTokens: completionTokens,
+            totalTokens: promptTokens + completionTokens,
+            reasoningTokens: reasoningTokens
+        )
+    }
+
     var asChatMessage: ChatMessage {
-        ChatMessage(role: role, content: content, imageData: imageData)
+        ChatMessage(role: role, content: content, imageData: imageData, usage: usage, responseTime: responseTime, modelID: modelID)
     }
 }
