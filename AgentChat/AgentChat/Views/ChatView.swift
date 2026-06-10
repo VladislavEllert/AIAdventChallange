@@ -8,15 +8,18 @@ struct ChatView: View {
     private enum ActiveSheet: Identifiable {
         case settings
         case export(String)
+        case stats
         var id: Int {
             switch self {
             case .settings: return 0
             case .export: return 1
+            case .stats: return 2
             }
         }
     }
 
     @Environment(\.modelContext) private var context
+    @AppStorage("showContextHUD") private var showContextHUD = true
     @State private var vm = ChatViewModel()
     @State private var activeSheet: ActiveSheet?
     @State private var showChats = false
@@ -42,6 +45,7 @@ struct ChatView: View {
                 VStack(spacing: 0) {
                     messagesArea
                     Divider()
+                    if showContextHUD { contextHUD }
                     inputBar
                 }
                 .background(AmbientBackground())
@@ -55,6 +59,12 @@ struct ChatView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
+                            Button { activeSheet = .stats } label: {
+                                Label("Статистика чата (токены)", systemImage: "number")
+                            }
+                            Button { Task { await vm.compactNow(auto: false) } } label: {
+                                Label("Сжать контекст", systemImage: "rectangle.compress.vertical")
+                            }
                             Button {
                                 activeSheet = .export(vm.exportJSON())
                             } label: {
@@ -72,6 +82,7 @@ struct ChatView: View {
                     switch sheet {
                     case .settings: SettingsView()
                     case .export(let json): MemoryExportSheet(json: json)
+                    case .stats: ChatStatsSheet(vm: vm)
                     }
                 }
                 .onAppear {
@@ -133,7 +144,7 @@ struct ChatView: View {
                         MessageBubble(message: message)
                             .id(message.id)
                             .contextMenu {
-                                if !message.content.isEmpty {
+                                if !message.content.isEmpty, message.role != .system {
                                     Button {
                                         vm.remember(message.content)
                                     } label: {
@@ -142,7 +153,7 @@ struct ChatView: View {
                                 }
                             }
                     }
-                    if vm.isLoading {
+                    if isAwaitingFirstToken {
                         TypingBubble().id("typing")
                     }
                     if let error = vm.errorText {
@@ -155,7 +166,53 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: vm.messages.count) { scrollToBottom(proxy) }
             .onChange(of: vm.isLoading) { scrollToBottom(proxy) }
+            .onChange(of: vm.messages.last?.content) { scrollToBottom(proxy) }
         }
+    }
+
+    /// Крутилку показываем только пока стрим не выдал первый токен (потом растёт сам пузырь).
+    private var isAwaitingFirstToken: Bool {
+        guard vm.isLoading else { return false }
+        let streaming = vm.messages.first(where: { $0.id == vm.streamingID })
+        return streaming?.content.isEmpty ?? true
+    }
+
+    private func short(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return "\(n / 1000)k" }
+        return "\(n)"
+    }
+
+    private var contextHUD: some View {
+        let fill = vm.contextFill
+        let danger = fill > 0.9
+        return VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Контекст")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                ProgressView(value: fill)
+                    .tint(danger ? .red : .accentColor)
+                Text("\(short(vm.lastPromptTokens))/\(short(vm.effectiveContextLimit))")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(danger ? .red : .secondary)
+                if vm.demoLimitEnabled {
+                    Text("демо")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.orange)
+                }
+            }
+            HStack {
+                Text("Диалог: Σ \(vm.sessionTokens) ток.")
+                Spacer()
+                Text(String(format: "₽ %.4f", vm.sessionCostRub))
+            }
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.bar)
     }
 
     private var emptyState: some View {
