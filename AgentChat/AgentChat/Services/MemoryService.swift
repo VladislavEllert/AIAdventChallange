@@ -59,6 +59,28 @@ struct MemoryService {
         return parseFacts(raw, known: known)
     }
 
+    /// Почистить список фактов: объединить дубли/близкое, убрать устаревшее и
+    /// противоречивое. Агент сам приводит память в порядок (дешёвая модель).
+    func consolidate(facts: [String]) async throws -> [String] {
+        guard facts.count > 1 else { return facts }
+        let system = """
+        Ты чистишь список фактов о пользователе. Объедини дубли и близкое по смыслу, \
+        убери устаревшие и противоречивые, оставь только актуальные и важные. По одному \
+        факту на строку, кратко, без нумерации. Не выдумывай новых фактов.
+        """
+        let requests = [
+            ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
+            ChatMessageRequest(role: .user, text: facts.joined(separator: "\n"), imageDataURL: nil)
+        ]
+        let raw = try await client.complete(
+            messages: requests,
+            model: cheapModel,
+            params: GenerationParams(temperature: 0.2, maxTokens: 400)
+        )
+        let cleaned = parseFacts(raw, known: [])
+        return cleaned.isEmpty ? facts : cleaned   // safety: не обнуляем память
+    }
+
     /// JSON-снимок: что реально уходит в модель (system + окно) + хранимое
     /// (факты, summary, вся история). Для наглядности (видео/гит).
     func exportJSON(

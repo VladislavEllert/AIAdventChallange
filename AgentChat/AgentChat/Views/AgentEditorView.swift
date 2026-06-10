@@ -85,19 +85,30 @@ struct AgentEditorView: View {
     }
 }
 
-/// Долгая память агента: список фактов о пользователе (добавить/удалить).
+/// Долгая память агента: список фактов о пользователе (добавить/изменить/удалить/почистить).
 private struct FactsSection: View {
     @Bindable var agent: AgentProfile
     @State private var newFact = ""
+    @State private var editIndex: Int?
+    @State private var editText = ""
+    @State private var isCleaning = false
+    private let memory = MemoryService()
 
     var body: some View {
         Section {
-            ForEach(agent.facts, id: \.self) { fact in
+            ForEach(Array(agent.facts.enumerated()), id: \.offset) { index, fact in
                 Text(fact)
+                    .contextMenu {
+                        Button { startEdit(index, fact) } label: {
+                            Label("Изменить", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { delete(index) } label: {
+                            Label("Удалить", systemImage: "trash")
+                        }
+                    }
             }
-            .onDelete { offsets in
-                agent.facts.remove(atOffsets: offsets)
-            }
+            .onDelete { agent.facts.remove(atOffsets: $0) }
+
             HStack {
                 TextField("Добавить факт", text: $newFact)
                 Button {
@@ -107,11 +118,29 @@ private struct FactsSection: View {
                 }
                 .disabled(newFact.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+
+            if agent.facts.count > 1 {
+                Button {
+                    clean()
+                } label: {
+                    Label(isCleaning ? "Чищу…" : "Почистить память (ИИ)", systemImage: "sparkles")
+                }
+                .disabled(isCleaning)
+            }
         } header: {
             Text("Память (факты о пользователе)")
         } footer: {
-            Text("Эти факты агент помнит во всех своих чатах. Наполняется вручную и авто-извлечением.")
+            Text("Помнит во всех чатах. Зажми факт → изменить/удалить. «Почистить» объединит дубли и уберёт устаревшее.")
         }
+        .alert("Изменить факт", isPresented: editingBinding) {
+            TextField("Факт", text: $editText)
+            Button("Сохранить") { saveEdit() }
+            Button("Отмена", role: .cancel) { editIndex = nil }
+        }
+    }
+
+    private var editingBinding: Binding<Bool> {
+        Binding(get: { editIndex != nil }, set: { if !$0 { editIndex = nil } })
     }
 
     private func add() {
@@ -121,5 +150,31 @@ private struct FactsSection: View {
             agent.facts.append(fact)
         }
         newFact = ""
+    }
+
+    private func delete(_ index: Int) {
+        guard agent.facts.indices.contains(index) else { return }
+        agent.facts.remove(at: index)
+    }
+
+    private func startEdit(_ index: Int, _ fact: String) {
+        editIndex = index
+        editText = fact
+    }
+
+    private func saveEdit() {
+        guard let index = editIndex, agent.facts.indices.contains(index) else { return }
+        let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { agent.facts[index] = text }
+        editIndex = nil
+    }
+
+    private func clean() {
+        isCleaning = true
+        Task {
+            let cleaned = (try? await memory.consolidate(facts: agent.facts)) ?? agent.facts
+            agent.facts = cleaned
+            isCleaning = false
+        }
     }
 }
