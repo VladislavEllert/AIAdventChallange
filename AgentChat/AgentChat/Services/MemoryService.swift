@@ -11,11 +11,12 @@ struct MemoryService {
     }
 
     /// Сжать старую часть диалога в summary (дописать к предыдущей выжимке).
-    func summarize(previous: String?, overflow: [ChatMessage]) async throws -> String {
+    /// maxWords — бюджет длины выжимки (жёстче компрессия → короче).
+    func summarize(previous: String?, overflow: [ChatMessage], maxWords: Int = 120) async throws -> String {
         let system = """
         Ты сжимаешь диалог в краткую выжимку для памяти ассистента. Сохрани важное: \
         имена, факты, предпочтения, договорённости, нерешённые вопросы. Без воды, \
-        по-русски, до 120 слов. Верни только саму выжимку, без пояснений.
+        по-русски, до \(maxWords) слов. Верни только саму выжимку, без пояснений.
         """
         var body = ""
         if let previous, !previous.isEmpty {
@@ -45,6 +46,15 @@ struct MemoryService {
         - ЗАМЕНИ изменившиеся (например возраст, город, статус — новое значение вместо старого);
         - объедини дубли и близкое по смыслу;
         - убери устаревшее и противоречивое.
+
+        Записывай ТОЛЬКО долговременные факты О САМОМ ПОЛЬЗОВАТЕЛЕ: имя, возраст/др, учёба/работа, \
+        город, близкие и питомцы, вещи, устойчивые предпочтения, постоянные цели/проекты.
+        НЕ записывай (это НЕ факты о пользователе):
+        - детали текущего разговора/чата («первое сообщение было…», «спросил про…», «обсуждали…»);
+        - текущую дату/время и сиюминутные состояния (быстро устаревают);
+        - факты о мире и новостях (последний iPhone, курсы, события) — это не про пользователя;
+        - инструкции, имя или персону самого ассистента.
+
         По одному факту на строку, без нумерации, кратко. Только реальные факты, не выдумывай. \
         Сохрани все актуальные факты, не теряй важное. До ~20 фактов.
         """
@@ -71,8 +81,15 @@ struct MemoryService {
         guard facts.count > 1 else { return facts }
         let system = """
         Ты чистишь список фактов о пользователе. Объедини дубли и близкое по смыслу, \
-        убери устаревшие и противоречивые, оставь только актуальные и важные. По одному \
-        факту на строку, кратко, без нумерации. Не выдумывай новых фактов.
+        убери устаревшие и противоречивые, оставь только актуальные и важные.
+
+        Удали записи, которые НЕ являются долговременными фактами о пользователе:
+        - детали конкретного чата («первое сообщение было…», «спросил про…»);
+        - текущую дату/время и сиюминутные состояния;
+        - факты о мире и новостях (последний iPhone, курсы, события);
+        - инструкции, имя или персону самого ассистента.
+
+        По одному факту на строку, кратко, без нумерации. Не выдумывай новых фактов.
         """
         let requests = [
             ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
@@ -102,34 +119,75 @@ struct MemoryService {
             let role: String
             let content: String
             let createdAt: String
+            let promptTokens: Int?
+            let completionTokens: Int?
+            let reasoningTokens: Int?
+            let totalTokens: Int?
+            let costRub: Double?
+            let responseTimeSec: Double?
         }
+        struct TokensSummary: Encodable {
+            let promptTokens: Int
+            let completionTokens: Int
+            let reasoningTokens: Int
+            let totalTokens: Int
+            let costRub: Double
+            let answers: Int
+        }
+        // Порядок полей = порядок объявления (sortedKeys выключен): сверху главное
+        // (расход токенов, summary, факты), тяжёлое (массивы, большой systemPrompt) — внизу.
         struct Export: Encodable {
-            // что УХОДИТ в модель перед ответом:
             let agent: String
             let model: String
-            let systemPrompt: String
-            let contextWindow: [ExportMessage]
-            // что ХРАНИТСЯ:
-            let facts: [String]
-            let summary: String?
-            let fullHistory: [ExportMessage]
+            let tokens: TokensSummary          // расход токенов по чату
+            let summary: String?               // сжатая выжимка старого
+            let facts: [String]                // долгая память (не трогается сжатием)
+            let contextWindow: [ExportMessage] // что УХОДИТ в модель сейчас (после сжатия — коротко)
+            let fullHistory: [ExportMessage]   // весь архив переписки
+            let systemPrompt: String           // весь собранный system (персона+факты+summary)
         }
 
         let iso = ISO8601DateFormatter()
         let map: ([ChatMessage]) -> [ExportMessage] = { msgs in
-            msgs.map { ExportMessage(role: $0.role.rawValue, content: $0.content, createdAt: iso.string(from: $0.createdAt)) }
+            msgs.map { m in
+                let u = m.usage
+                let cost = u.map { LLMModel.by(id: m.modelID).cost($0) }
+                return ExportMessage(
+                    role: m.role.rawValue,
+                    content: m.content,
+                    createdAt: iso.string(from: m.createdAt),
+                    promptTokens: u?.promptTokens,
+                    completionTokens: u?.completionTokens,
+                    reasoningTokens: u?.reasoningTokens,
+                    totalTokens: u?.totalTokens,
+                    costRub: cost,
+                    responseTimeSec: m.responseTime
+                )
+            }
         }
+        let tokens = TokensSummary(
+            promptTokens: fullHistory.compactMap { $0.usage?.promptTokens }.reduce(0, +),
+            completionTokens: fullHistory.compactMap { $0.usage?.completionTokens }.reduce(0, +),
+            reasoningTokens: fullHistory.compactMap { $0.usage?.reasoningTokens }.reduce(0, +),
+            totalTokens: fullHistory.compactMap { $0.usage?.totalTokens }.reduce(0, +),
+            costRub: fullHistory.reduce(0) { acc, m in
+                guard let u = m.usage else { return acc }
+                return acc + LLMModel.by(id: m.modelID).cost(u)
+            },
+            answers: fullHistory.filter { $0.usage != nil }.count
+        )
         let export = Export(
             agent: agentName,
             model: model,
-            systemPrompt: system,
-            contextWindow: map(window),
-            facts: facts,
+            tokens: tokens,
             summary: summary,
-            fullHistory: map(fullHistory)
+            facts: facts,
+            contextWindow: map(window),
+            fullHistory: map(fullHistory),
+            systemPrompt: system
         )
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys]
+        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(export), let json = String(data: data, encoding: .utf8) else {
             return "{}"
         }
