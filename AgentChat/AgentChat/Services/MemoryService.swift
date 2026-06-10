@@ -59,28 +59,46 @@ struct MemoryService {
         return parseFacts(raw, known: known)
     }
 
-    /// JSON-снимок памяти/контекста — для наглядности (видео/гит).
-    func exportJSON(agentName: String, facts: [String], summary: String?, messages: [ChatMessage]) -> String {
+    /// JSON-снимок: что реально уходит в модель (system + окно) + хранимое
+    /// (факты, summary, вся история). Для наглядности (видео/гит).
+    func exportJSON(
+        agentName: String,
+        model: String,
+        system: String,
+        window: [ChatMessage],
+        facts: [String],
+        summary: String?,
+        fullHistory: [ChatMessage]
+    ) -> String {
         struct ExportMessage: Encodable {
             let role: String
             let content: String
             let createdAt: String
         }
         struct Export: Encodable {
+            // что УХОДИТ в модель перед ответом:
             let agent: String
+            let model: String
+            let systemPrompt: String
+            let contextWindow: [ExportMessage]
+            // что ХРАНИТСЯ:
             let facts: [String]
             let summary: String?
-            let messages: [ExportMessage]
+            let fullHistory: [ExportMessage]
         }
 
         let iso = ISO8601DateFormatter()
+        let map: ([ChatMessage]) -> [ExportMessage] = { msgs in
+            msgs.map { ExportMessage(role: $0.role.rawValue, content: $0.content, createdAt: iso.string(from: $0.createdAt)) }
+        }
         let export = Export(
             agent: agentName,
+            model: model,
+            systemPrompt: system,
+            contextWindow: map(window),
             facts: facts,
             summary: summary,
-            messages: messages.map {
-                ExportMessage(role: $0.role.rawValue, content: $0.content, createdAt: iso.string(from: $0.createdAt))
-            }
+            fullHistory: map(fullHistory)
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys]

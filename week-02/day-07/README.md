@@ -106,4 +106,4 @@ system, который уходит в LLM =
 
 ## Видео
 
-- _TODO_
+- [▶ Loom](https://www.loom.com/share/f35016674e984ab6a81f10998e507ba0)

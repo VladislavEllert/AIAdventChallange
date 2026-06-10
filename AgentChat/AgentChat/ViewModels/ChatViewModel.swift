@@ -153,14 +153,17 @@ final class ChatViewModel {
         }
     }
 
-    /// JSON-снимок памяти/контекста — для наглядности.
+    /// JSON-снимок: что уходит в модель (system + окно) + хранимое.
     func exportJSON() -> String {
-        guard let profile else { return "{}" }
+        guard let profile, let agent else { return "{}" }
         return memory.exportJSON(
             agentName: "\(profile.name) \(profile.emoji)",
+            model: agent.model,
+            system: agent.systemContext,
+            window: agent.contextWindow,
             facts: profile.facts,
             summary: chat?.summary,
-            messages: messages
+            fullHistory: messages
         )
     }
 

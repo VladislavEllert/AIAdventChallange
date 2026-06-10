@@ -31,7 +31,7 @@
 | 01 | 04 | Температура: сравнение 0/0.7/1.2 (+top_p/top_k), точность ↔ креатив | done | [week-01/day-04](week-01/day-04/) | [▶](https://www.loom.com/share/70d345242d1446a8ada8343cbc50eb83) |
 | 01 | 05 | Версии моделей: 1 промпт на 4 GPT, замер latency/токенов/₽ | done | [week-01/day-05](week-01/day-05/) | [▶](https://www.loom.com/share/80198dddfa8644c5b92ebf0823304d0c) |
 | 02 | 06 | Первый агент: iOS-приложение **AgentChat** (мульти-агент, ProxyAPI) | done | [week-02/day-06](week-02/day-06/) · [AgentChat](AgentChat/) | [▶](https://drive.google.com/file/d/1oxYBNidlMzq5eve09l61oSuv6t2t1pWy/view?usp=sharing) |
-| 02 | 07 | Сохранение контекста: SQLite-персистенция + долгая память (факты), сжатие, JSON-экспорт | done | [week-02/day-07](week-02/day-07/) · [AgentChat](AgentChat/) | _TODO_ |
+| 02 | 07 | Сохранение контекста: SQLite-персистенция + долгая память (факты), сжатие, JSON-экспорт | done | [week-02/day-07](week-02/day-07/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/f35016674e984ab6a81f10998e507ba0) |
 
 ## Приложение AgentChat (неделя 2)
 

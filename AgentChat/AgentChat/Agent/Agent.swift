@@ -69,6 +69,10 @@ final class Agent {
         history = messages
     }
 
+    /// Что реально уходит в модель: собранный system + окно сообщений.
+    var systemContext: String { composedSystem() }
+    var contextWindow: [ChatMessage] { history }
+
     /// Общее самознание агента (как он устроен) — добавляется ВСЕМ агентам.
     private static let selfKnowledge = """
     Как ты устроен (память) — отвечай об этом честно, если спросят:
