@@ -15,6 +15,12 @@ final class Agent {
     var facts: [String] = []
     var summary: String?
 
+    /// «Символов на токен» — самокалибруется по реальному usage (для локальной оценки до отправки).
+    var charsPerToken: Double = TokenEstimator.defaultCharsPerToken
+    /// Сколько старых сообщений выкинуто из последнего запроса по токен-бюджету
+    /// (демо переполнения: модель их не видит → теряет контекст). 0 — ничего не урезано.
+    private(set) var lastTrimmedCount = 0
+
     private let client: ProxyAPIClient
     private(set) var history: [ChatMessage] = []
 
@@ -35,24 +41,61 @@ final class Agent {
     }
 
     /// Принимает запрос юзера (+опц. фото) → собирает контекст (system + история) →
-    /// зовёт LLM → возвращает ответ. История коммитится только при успехе.
-    /// Картинка идёт только в текущем сообщении; в историю пишем текст (или «[фото]»),
-    /// чтобы не гнать base64 каждый запрос.
-    func respond(to userInput: String, imageData: Data? = nil) async throws -> String {
+    /// стримит ответ модели по дельтам (onDelta) → возвращает точный usage.
+    /// История коммитится только при успехе. Картинка идёт только в текущем сообщении;
+    /// в историю пишем текст (или «[фото]»), чтобы не гнать base64 каждый запрос.
+    /// tokenBudget (демо переполнения): если задан и контекст его превышает — выкидываем
+    /// самые СТАРЫЕ сообщения из отправляемого промпта, пока не влезет. История в UI цела,
+    /// но модель старое не видит → реально теряет контекст и забывает. Это и есть «что ломается».
+    /// @MainActor — чтобы onDelta и мутации шли на главном потоке (UI безопасно).
+    @MainActor
+    func respondStreaming(to userInput: String, imageData: Data? = nil, tokenBudget: Int? = nil, onDelta: (String) -> Void) async throws -> TokenUsage? {
         let imageURL = imageData.map { "data:image/jpeg;base64,\($0.base64EncodedString())" }
 
-        var requests: [ChatMessageRequest] = [ChatMessageRequest(role: .system, text: composedSystem(), imageDataURL: nil)]
-        requests += history.map { ChatMessageRequest(role: $0.role, text: $0.content, imageDataURL: nil) }
-        requests.append(ChatMessageRequest(role: .user, text: userInput, imageDataURL: imageURL))
+        let systemReq = ChatMessageRequest(role: .system, text: composedSystem(), imageDataURL: nil)
+        let userReq = ChatMessageRequest(role: .user, text: userInput, imageDataURL: imageURL)
+        var historyReqs = history.map { ChatMessageRequest(role: $0.role, text: $0.content, imageDataURL: nil) }
 
-        let answer = try await client.complete(messages: requests, model: model, params: params)
+        // Демо переполнения: режем самые старые сообщения истории, пока не влезем в бюджет.
+        lastTrimmedCount = 0
+        if let budget = tokenBudget {
+            func estTokens(_ reqs: [ChatMessageRequest]) -> Int {
+                TokenEstimator.estimate(reqs.map(\.text).joined(separator: "\n"), charsPerToken: charsPerToken)
+            }
+            while !historyReqs.isEmpty, estTokens([systemReq] + historyReqs + [userReq]) > budget {
+                historyReqs.removeFirst()
+                lastTrimmedCount += 1
+            }
+        }
+
+        let requests: [ChatMessageRequest] = [systemReq] + historyReqs + [userReq]
+        let sentChars = requests.reduce(0) { $0 + $1.text.count }
+
+        var answer = ""
+        var usage: TokenUsage?
+        for try await event in client.completeStreaming(messages: requests, model: model, params: params) {
+            switch event {
+            case .delta(let chunk):
+                answer += chunk
+                onDelta(chunk)
+            case .usage(let u):
+                usage = u
+            }
+        }
+        guard !answer.isEmpty else { throw ProxyAPIError.empty }
+
+        // Калибровка оценки по факту (картинки искажают символ↔токен — пропускаем).
+        if imageData == nil, let p = usage?.promptTokens,
+           let k = TokenEstimator.calibrate(sentChars: sentChars, promptTokens: p) {
+            charsPerToken = k
+        }
 
         let historyText = userInput.isEmpty ? "[фото]" : userInput
         history = history + [
             ChatMessage(role: .user, content: historyText),
             ChatMessage(role: .assistant, content: answer)
         ]
-        return answer
+        return usage
     }
 
     func resetHistory() {

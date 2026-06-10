@@ -48,8 +48,10 @@ private struct ChatCompletionRequest: Encodable {
     let messages: [ChatMessageRequest]
     let temperature: Double?
     let max_tokens: Int
+    var stream: Bool = false
 
-    enum CodingKeys: String, CodingKey { case model, messages, temperature, max_tokens }
+    enum CodingKeys: String, CodingKey { case model, messages, temperature, max_tokens, stream, stream_options }
+    private struct StreamOptions: Encodable { let include_usage: Bool }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -57,6 +59,10 @@ private struct ChatCompletionRequest: Encodable {
         try c.encode(messages, forKey: .messages)
         try c.encode(max_tokens, forKey: .max_tokens)
         if let temperature { try c.encode(temperature, forKey: .temperature) }
+        if stream {
+            try c.encode(true, forKey: .stream)
+            try c.encode(StreamOptions(include_usage: true), forKey: .stream_options)
+        }
     }
 }
 
@@ -66,6 +72,22 @@ private struct ChatCompletionResponse: Decodable {
         let message: Message
     }
     let choices: [Choice]
+}
+
+/// Один SSE-чанк стриминга: либо кусок текста (delta), либо финальный usage.
+private struct StreamChunk: Decodable {
+    struct Choice: Decodable {
+        struct Delta: Decodable { let content: String? }
+        let delta: Delta?
+    }
+    let choices: [Choice]?
+    let usage: TokenUsage?
+}
+
+/// Событие стрима: дельта текста или итоговый usage (приходит финальным чанком).
+enum StreamEvent {
+    case delta(String)
+    case usage(TokenUsage)
 }
 
 enum ProxyAPIError: LocalizedError {
@@ -126,5 +148,58 @@ struct ProxyAPIClient {
             throw ProxyAPIError.empty
         }
         return content
+    }
+
+    /// Стриминг ответа (SSE). Отдаёт дельты текста по мере генерации и финальный usage.
+    /// Ошибки (вкл. 400 при переполнении контекста) бросаются как ProxyAPIError.http.
+    func completeStreaming(messages: [ChatMessageRequest], model: String, params: GenerationParams) -> AsyncThrowingStream<StreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let work = Task {
+                do {
+                    guard let key = apiKey(), !key.isEmpty else { throw ProxyAPIError.missingKey }
+
+                    var request = URLRequest(url: baseURL.appending(path: "chat/completions"))
+                    request.httpMethod = "POST"
+                    request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    let supportsTemperature = LLMModel.by(id: model).supportsTemperature
+                    request.httpBody = try JSONEncoder().encode(
+                        ChatCompletionRequest(
+                            model: model,
+                            messages: messages,
+                            temperature: supportsTemperature ? params.temperature : nil,
+                            max_tokens: params.maxTokens,
+                            stream: true
+                        )
+                    )
+
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse else { throw ProxyAPIError.invalidResponse }
+                    guard (200..<300).contains(http.statusCode) else {
+                        var body = ""
+                        for try await line in bytes.lines { body += line }
+                        throw ProxyAPIError.http(status: http.statusCode, body: body)
+                    }
+
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if payload == "[DONE]" { break }
+                        guard let data = payload.data(using: .utf8),
+                              let chunk = try? JSONDecoder().decode(StreamChunk.self, from: data) else { continue }
+                        if let content = chunk.choices?.first?.delta?.content, !content.isEmpty {
+                            continuation.yield(.delta(content))
+                        }
+                        if let usage = chunk.usage {
+                            continuation.yield(.usage(usage))
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in work.cancel() }
+        }
     }
 }
