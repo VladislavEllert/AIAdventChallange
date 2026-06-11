@@ -1,8 +1,14 @@
 # День 8 — Работа с токенами и контекстным окном
 
+> ⭐ **Главный код задания:**
+> - **[ProxyAPIClient.swift](../../AgentChat/AgentChat/Networking/ProxyAPIClient.swift)** — `completeStreaming()`: SSE-стриминг + парсинг `usage` (токены).
+> - **[Agent.swift](../../AgentChat/AgentChat/Agent/Agent.swift)** — `respondStreaming()`: стрим дельт, точный usage, обрезка старого при переполнении.
+> - **[ChatViewModel.swift](../../AgentChat/AgentChat/ViewModels/ChatViewModel.swift)** — `send()`, `compactNow()`/`compressIfNeeded()` (компактация), демо-лимит, агрегаты токенов/₽.
+> - **[LLMModel.swift](../../AgentChat/AgentChat/Models/LLMModel.swift)** — `contextLimit` по провайдерам + `cost(usage)` в ₽.
+
 > ▶ **Видео:** https://www.loom.com/share/2f4052d188a34c45a730ead89fb72a7e
 
-Неделя 3 («Управление контекстом»). Продолжение приложения [AgentChat](../../AgentChat/).
+Продолжение приложения [AgentChat](../../AgentChat/) (недели 2).
 
 ## Задача
 

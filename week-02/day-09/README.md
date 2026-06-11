@@ -1,5 +1,11 @@
 # День 9 — Управление контекстом: сжатие истории
 
+> ⭐ **Главный код задания:**
+> - **[Agent.swift](../../AgentChat/AgentChat/Agent/Agent.swift)** — `composedSystem()`: подстановка `summary` в `system` вместо полной истории.
+> - **[ChatViewModel.swift](../../AgentChat/AgentChat/ViewModels/ChatViewModel.swift)** — `compressIfNeeded()` (старое → summary по числу сообщений), `compactNow()` (по токен-лимиту), окно N, тумблер `summaryEnabled`.
+> - **[MemoryService.swift](../../AgentChat/AgentChat/Services/MemoryService.swift)** — `summarize()`: сжатие старого в summary.
+> - **[ChatSession.swift](../../AgentChat/AgentChat/Models/ChatSession.swift)** — `summary` хранится отдельно в SQLite.
+
 > ▶ **Видео:** https://www.loom.com/share/cbeff47284d641ad913540f47d3b14e1
 
 Продолжение приложения [AgentChat](../../AgentChat/). Развивает память дня-7 и токены дня-8.
