@@ -5,9 +5,15 @@ import Observation
 @MainActor
 @Observable
 final class ChatViewModel {
+    /// Сжатие истории (summary) включено? Выкл → шлём ВСЮ историю целиком (без окна/summary),
+    /// для сравнения качества и токенов без сжатия.
+    var summaryEnabled: Bool { UserDefaults.standard.object(forKey: "summaryEnabled") as? Bool ?? true }
+
     /// Сколько последних сообщений держим в окне (остальное → summary).
     /// Демо-крутилка: можно уменьшить, чтобы вытеснение старого контекста было видно быстро.
+    /// Сжатие выкл → окно не ограничено (вся история).
     private var window: Int {
+        guard summaryEnabled else { return .max }
         let v = UserDefaults.standard.integer(forKey: "demoWindowSize")
         return v >= 2 ? v : 12
     }
@@ -132,9 +138,10 @@ final class ChatViewModel {
         lastPromptTokens = stored.last(where: { $0.role == .assistant })?.promptTokens ?? 0
 
         agent?.facts = profile?.facts ?? []
-        agent?.summary = session.summary
-        // в модель уходит только окно последних N; старое — в summary
-        let windowMsgs = stored.suffix(window).map {
+        agent?.summary = summaryEnabled ? session.summary : nil
+        // в модель уходит только окно последних N; старое — в summary.
+        // Системные плашки (сжатие) — только для UI, в контекст модели НЕ кладём.
+        let windowMsgs = stored.filter { $0.role != .system }.suffix(window).map {
             ChatMessage(role: $0.role, content: $0.content.isEmpty ? "[фото]" : $0.content)
         }
         agent?.setWindow(Array(windowMsgs))
@@ -172,7 +179,7 @@ final class ChatViewModel {
         errorText = nil
         // Демо переполнения: лимит окна = токен-бюджет. Превысили → старые сообщения
         // выкидываются из промпта (страховка, чтобы не упереться в стену) → модель забывает.
-        let budget: Int? = demoLimitEnabled ? effectiveContextLimit : nil
+        let budget: Int? = (summaryEnabled && demoLimitEnabled) ? effectiveContextLimit : nil
 
         messages.append(ChatMessage(role: .user, content: text, imageData: image))
         persist(role: .user, content: text, imageData: image, to: chat, context: context)
@@ -186,7 +193,7 @@ final class ChatViewModel {
         Task {
             // Авто-компактация при подходе к лимиту: сжать старое окно → токены падают.
             // Если сработала — окно уже урезано, второй (message-count) проход не нужен.
-            let didCompact = (estimatedContextTokens(plus: text) >= compactThreshold)
+            let didCompact = (summaryEnabled && estimatedContextTokens(plus: text) >= compactThreshold)
                 ? await compactNow(auto: true)
                 : false
 
@@ -211,7 +218,7 @@ final class ChatViewModel {
                 if let usage { lastPromptTokens = usage.promptTokens }
                 persist(role: .assistant, content: finalText, imageData: nil, to: chat, context: context,
                         usage: usage, responseTime: elapsed, modelID: modelID)
-                if !didCompact { await compressIfNeeded(chat: chat) }
+                if summaryEnabled, !didCompact { await compressIfNeeded(chat: chat) }
             } catch {
                 messages.removeAll { $0.id == placeholderID }   // убрать незавершённый ответ
                 errorText = friendlyError(error)
@@ -251,9 +258,18 @@ final class ChatViewModel {
         chat.summary = newSummary
         agent.summary = newSummary
         agent.setWindow(keep)
+        let noteText = compactionNoteText(messagesFolded: overflow.count, prevSummary: prevSummary, newSummary: newSummary, tag: "(окно)")
         if let idx = messages.firstIndex(where: { $0.id == noteID }) {
-            messages[idx].content = compactionNoteText(messagesFolded: overflow.count, prevSummary: prevSummary, newSummary: newSummary, tag: "(окно)")
+            messages[idx].content = noteText
         }
+        persistSystemNote(noteText, to: chat)
+    }
+
+    /// Сохранить системную плашку (сжатие) в SQLite, чтобы она пережила перезапуск.
+    private func persistSystemNote(_ text: String, to chat: ChatSession) {
+        guard let context else { return }
+        persist(role: .system, content: text, imageData: nil, to: chat, context: context)
+        try? context.save()
     }
 
     private func wordCount(_ s: String) -> Int {
@@ -302,7 +318,7 @@ final class ChatViewModel {
     /// auto=true — вызвано автоматически у лимита; false — вручную (кнопка/команда).
     @discardableResult
     func compactNow(auto: Bool) async -> Bool {
-        guard let agent, let chat, hasKey, !isCompacting else { return false }
+        guard let agent, let chat, hasKey, !isCompacting, summaryEnabled else { return false }
         if !auto, isLoading { return false }   // вручную — не лезть в активный стрим
         let win = agent.contextWindow
         let note = ChatMessage(role: .system, content: "Сжимаю контекст…")
@@ -329,11 +345,13 @@ final class ChatViewModel {
             trimmedCount = 0
             try? context?.save()
         }
+        let noteText = newSummary.map {
+            compactionNoteText(messagesFolded: toCompact.count, prevSummary: prevSummary, newSummary: $0, tag: auto ? "(авто)" : "(вручную)")
+        } ?? "Не удалось сжать контекст"
         if let idx = messages.firstIndex(where: { $0.id == noteID }) {
-            messages[idx].content = newSummary.map {
-                compactionNoteText(messagesFolded: toCompact.count, prevSummary: prevSummary, newSummary: $0, tag: auto ? "(авто)" : "(вручную)")
-            } ?? "Не удалось сжать контекст"
+            messages[idx].content = noteText
         }
+        if newSummary != nil { persistSystemNote(noteText, to: chat) }
         isCompacting = false
         return newSummary != nil
     }

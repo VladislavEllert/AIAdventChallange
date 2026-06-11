@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("demoLimitEnabled") private var demoLimitEnabled = false
     @AppStorage("demoLimitValue") private var demoLimitValue = 2000
     @AppStorage("compressionLevel") private var compressionLevelRaw = CompressionLevel.default.rawValue
+    @AppStorage("summaryEnabled") private var summaryEnabled = true
     @AppStorage("autoMemoryEnabled") private var autoMemoryEnabled = true
     @AppStorage("showTokenMeta") private var showTokenMeta = true
     @AppStorage("showCompactionInfo") private var showCompactionInfo = true
@@ -99,16 +100,19 @@ struct SettingsView: View {
 
     private var compressionSection: some View {
         Section {
-            Picker("Степень сжатия", selection: $compressionLevelRaw) {
-                ForEach(CompressionLevel.allCases) { level in
-                    Text(level.label).tag(level.rawValue)
+            Toggle("Сжатие истории (summary)", isOn: $summaryEnabled)
+            if summaryEnabled {
+                Picker("Степень сжатия", selection: $compressionLevelRaw) {
+                    ForEach(CompressionLevel.allCases) { level in
+                        Text(level.label).tag(level.rawValue)
+                    }
                 }
+                .pickerStyle(.navigationLink)
             }
-            .pickerStyle(.navigationLink)
         } header: {
             Text("Сжатие контекста")
         } footer: {
-            Text("Когда контекст подходит к лимиту (или вручную «Сжать контекст»), старое начало диалога сжимается в summary, а свежие сообщения остаются. Чем жёстче — тем меньше свежих оставляем и сильнее экономим токены, но больше деталей теряется.")
+            Text("Вкл: старое начало диалога сжимается в summary, свежие N сообщений остаются — экономия токенов. Выкл: в модель идёт ВСЯ история целиком (дороже, но без потери деталей) — для сравнения качества/токенов с сжатием. Степень: чем жёстче, тем меньше свежих оставляем.")
         }
     }
 

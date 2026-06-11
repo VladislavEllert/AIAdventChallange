@@ -27,7 +27,7 @@ struct ChatStatsSheet: View {
                     row("Последний запрос (prompt)", "\(vm.lastPromptTokens) ток.")
                     row("Лимит окна", "\(vm.effectiveContextLimit) ток." + (vm.demoLimitEnabled ? " (демо)" : ""))
                     row("Заполнено", String(format: "%.1f%%", vm.contextFill * 100))
-                    row("Размер окна (последние N)", "\(vm.windowSize) сообщ.")
+                    row("Размер окна (последние N)", vm.summaryEnabled ? "\(vm.windowSize) сообщ." : "вся история (сжатие выкл)")
                     row("В активном окне", "\(vm.windowMessageCount) сообщ.")
                     row("Сжато в summary", "\(vm.compressedMessageCount) сообщ.")
                     row("Есть summary", vm.hasSummary ? "да" : "нет")
