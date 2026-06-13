@@ -13,8 +13,13 @@ final class AgentProfile {
     var createdAt: Date
     /// Долгая память: стойкие факты о пользователе. Живут между чатами этого агента.
     var facts: [String] = []
+    /// Стратегия управления контекстом. «Мои» агенты — standard; курсовые тест-агенты — три стратегии дня-10.
+    var strategyRaw: String = ContextStrategyKind.standard.rawValue
+    /// Курсовой тест-агент (вкладка «Тестовые»). Отделяет полигон от «моих» агентов.
+    var isCourseTest: Bool = false
 
-    init(name: String, emoji: String, systemPrompt: String, isBuiltIn: Bool = false) {
+    init(name: String, emoji: String, systemPrompt: String, isBuiltIn: Bool = false,
+         strategy: ContextStrategyKind = .standard, isCourseTest: Bool = false) {
         self.id = UUID()
         self.name = name
         self.emoji = emoji
@@ -22,6 +27,12 @@ final class AgentProfile {
         self.isBuiltIn = isBuiltIn
         self.createdAt = Date()
         self.facts = []
+        self.strategyRaw = strategy.rawValue
+        self.isCourseTest = isCourseTest
+    }
+
+    var strategy: ContextStrategyKind {
+        ContextStrategyKind(rawValue: strategyRaw) ?? .standard
     }
 }
 
@@ -30,22 +41,28 @@ extension AgentProfile {
         let name: String
         let emoji: String
         let prompt: String
+        var strategy: ContextStrategyKind = .standard
+        var isCourseTest: Bool = false
     }
 
     /// Встроенные агенты, которые надо удалить у тех, у кого они уже засеяны.
-    private static let deprecatedBuiltIns: Set<String> = ["Аладдин", "Шут"]
+    private static let deprecatedBuiltIns: Set<String> = ["Аладдин", "Шут", "Акс"]
+
+    /// Общий промпт для тест-агентов: один и тот же сценарий, разная только память.
+    private static let testPrompt = """
+    Ты — ассистент-аналитик, помогаешь собрать ТЗ на проект. Веди диалог по делу: \
+    уточняй цель, ограничения, предпочтения, фиксируй договорённости и решения. \
+    Отвечай кратко и конкретно. Не выдумывай — если детали не хватает, спроси.
+    """
 
     private static let builtInPresets: [Preset] = [
-        Preset(
-            name: "Акс",
-            emoji: "🧠",
-            prompt: """
-            Тебя зовут Акс. Ты — очень умный эрудит-помощник, разбираешься в любом вопросе \
-            и подскажешь по делу. Отвечай точно, структурированно и по существу: факты, шаги, \
-            примеры. Сложный вопрос — разложи на пункты. Не выдумывай: если не уверен — прямо \
-            скажи и предложи, как проверить.
-            """
-        )
+        // Курсовые тест-агенты дня-10 — три стратегии управления контекстом (без summary).
+        Preset(name: "Окно N", emoji: "🪟", prompt: testPrompt,
+               strategy: .slidingWindow, isCourseTest: true),
+        Preset(name: "Факты KV", emoji: "🗂️", prompt: testPrompt,
+               strategy: .stickyFacts, isCourseTest: true),
+        Preset(name: "Ветки", emoji: "🌿", prompt: testPrompt,
+               strategy: .branching, isCourseTest: true)
     ]
 
     /// Досоздать недостающие встроенные агенты (идемпотентно) + убрать устаревшие.
@@ -60,7 +77,9 @@ extension AgentProfile {
                 name: preset.name,
                 emoji: preset.emoji,
                 systemPrompt: preset.prompt,
-                isBuiltIn: true
+                isBuiltIn: true,
+                strategy: preset.strategy,
+                isCourseTest: preset.isCourseTest
             ))
         }
 

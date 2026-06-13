@@ -43,6 +43,7 @@ struct ChatView: View {
             let drawerWidth = min(geo.size.width * 0.84, 340)
             ZStack(alignment: .leading) {
                 VStack(spacing: 0) {
+                    if vm.isTestAgent { strategyBar }
                     messagesArea
                     Divider()
                     if showContextHUD { contextHUD }
@@ -62,8 +63,10 @@ struct ChatView: View {
                             Button { activeSheet = .stats } label: {
                                 Label("Статистика чата (токены)", systemImage: "number")
                             }
-                            Button { Task { await vm.compactNow(auto: false) } } label: {
-                                Label("Сжать контекст", systemImage: "rectangle.compress.vertical")
+                            if !vm.isTestAgent {
+                                Button { Task { await vm.compactNow(auto: false) } } label: {
+                                    Label("Сжать контекст", systemImage: "rectangle.compress.vertical")
+                                }
                             }
                             Button {
                                 activeSheet = .export(vm.exportJSON())
@@ -145,10 +148,18 @@ struct ChatView: View {
                             .id(message.id)
                             .contextMenu {
                                 if !message.content.isEmpty, message.role != .system {
-                                    Button {
-                                        vm.remember(message.content)
-                                    } label: {
-                                        Label("Запомнить", systemImage: "brain")
+                                    if vm.strategyKind == .branching {
+                                        Button {
+                                            vm.forkBranch(after: message)
+                                        } label: {
+                                            Label("Ветка отсюда", systemImage: "arrow.triangle.branch")
+                                        }
+                                    } else if !vm.isTestAgent {
+                                        Button {
+                                            vm.remember(message.content)
+                                        } label: {
+                                            Label("Запомнить", systemImage: "brain")
+                                        }
                                     }
                                 }
                             }
@@ -181,6 +192,106 @@ struct ChatView: View {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return "\(n / 1000)k" }
         return "\(n)"
+    }
+
+    // MARK: - Полоса стратегии (день-10, тест-агенты)
+
+    private var strategyIcon: String {
+        switch vm.strategyKind {
+        case .standard: return "tray.full"
+        case .slidingWindow: return "rectangle.righthalf.inset.filled"
+        case .stickyFacts: return "list.bullet.rectangle"
+        case .branching: return "arrow.triangle.branch"
+        }
+    }
+
+    private var strategyBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: strategyIcon)
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
+                Text(vm.strategyKind.displayName)
+                    .font(.caption.bold())
+                Text("· \(vm.strategyKind.shortHint)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                if vm.strategyKind == .stickyFacts {
+                    if vm.isUpdatingFacts {
+                        ProgressView().scaleEffect(0.7)
+                    } else {
+                        Text("\(vm.stickyFacts.count) фактов")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if vm.strategyKind == .stickyFacts, !vm.stickyFacts.isEmpty {
+                factsStrip
+            }
+            if vm.strategyKind == .branching {
+                branchChips
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private var factsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(vm.stickyFacts) { fact in
+                    Text("\(fact.key): \(fact.value)")
+                        .font(.caption2)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.secondarySystemBackground), in: Capsule())
+                }
+            }
+        }
+    }
+
+    private var branchChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(vm.branchChips) { chip in
+                    Button {
+                        vm.switchBranch(to: chip.id)
+                    } label: {
+                        Text("\(chip.isMain ? "⭐ " : "")\(chip.name) · \(chip.messageCount)")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                chip.isActive ? Color.accentColor : Color(.secondarySystemBackground),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(chip.isActive ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        if !chip.isMain {
+                            Button {
+                                vm.makeBranchMain(chip.id)
+                            } label: {
+                                Label("Сделать основной", systemImage: "star")
+                            }
+                        }
+                        if vm.branchChips.count > 1 {
+                            Button(role: .destructive) {
+                                vm.deleteBranch(chip.id)
+                            } label: {
+                                Label("Удалить ветку", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var contextHUD: some View {

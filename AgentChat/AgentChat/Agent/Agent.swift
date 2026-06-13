@@ -15,6 +15,12 @@ final class Agent {
     var facts: [String] = []
     var summary: String?
 
+    /// Стратегия управления контекстом (день-10). nil → стандартный путь «моих» агентов
+    /// (самознание + долгие факты + summary). Задана → тест-агент: чистый system + окно стратегии.
+    var strategy: ContextStrategy?
+    /// KV-факты для стратегии stickyFacts (обновляются ViewModel'ом после каждого сообщения юзера).
+    var factsKV: [FactKV] = []
+
     /// «Символов на токен» — самокалибруется по реальному usage (для локальной оценки до отправки).
     var charsPerToken: Double = TokenEstimator.defaultCharsPerToken
     /// Сколько старых сообщений выкинуто из последнего запроса по токен-бюджету
@@ -54,10 +60,13 @@ final class Agent {
 
         let systemReq = ChatMessageRequest(role: .system, text: composedSystem(), imageDataURL: nil)
         let userReq = ChatMessageRequest(role: .user, text: userInput, imageDataURL: imageURL)
-        var historyReqs = history.map { ChatMessageRequest(role: $0.role, text: $0.content, imageDataURL: nil) }
+        // Стратегия (тест-агент) сама решает окно; стандартный агент шлёт всю history (она уже окно).
+        let effectiveHistory = strategy?.window(history) ?? history
+        var historyReqs = effectiveHistory.map { ChatMessageRequest(role: $0.role, text: $0.content, imageDataURL: nil) }
 
         // Демо переполнения: режем самые старые сообщения истории, пока не влезем в бюджет.
-        lastTrimmedCount = 0
+        // Для стратегии с окном уже учитываем отброшенные стратегией сообщения.
+        lastTrimmedCount = history.count - effectiveHistory.count
         if let budget = tokenBudget {
             func estTokens(_ reqs: [ChatMessageRequest]) -> Int {
                 TokenEstimator.estimate(reqs.map(\.text).joined(separator: "\n"), charsPerToken: charsPerToken)
@@ -114,7 +123,7 @@ final class Agent {
 
     /// Что реально уходит в модель: собранный system + окно сообщений.
     var systemContext: String { composedSystem() }
-    var contextWindow: [ChatMessage] { history }
+    var contextWindow: [ChatMessage] { strategy?.window(history) ?? history }
 
     /// Общее самознание агента (как он устроен) — добавляется ВСЕМ агентам.
     private static let selfKnowledge = """
@@ -129,7 +138,16 @@ final class Agent {
     """
 
     /// system = персона + самознание + долгие факты + summary старого.
+    /// Тест-агент (есть strategy) — чистый system + доп-блок стратегии (без summary-самознания).
     private func composedSystem() -> String {
+        if let strategy {
+            var text = systemPrompt
+            let know = strategy.kind.memorySelfKnowledge(window: strategy.kind.defaultWindow)
+            if !know.isEmpty { text += "\n\n" + know }
+            let add = strategy.systemAddition(StrategyInput(history: history, facts: factsKV))
+            if !add.isEmpty { text += "\n\n" + add }
+            return text
+        }
         var text = systemPrompt
         text += "\n\n" + Agent.selfKnowledge
         if !facts.isEmpty {
@@ -152,5 +170,6 @@ extension Agent {
             model: model,
             params: params
         )
+        self.strategy = profile.strategy.make()
     }
 }

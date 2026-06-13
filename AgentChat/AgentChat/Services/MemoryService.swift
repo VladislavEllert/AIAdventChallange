@@ -75,6 +75,35 @@ struct MemoryService {
         return updated.isEmpty ? known : updated   // safety: не теряем память
     }
 
+    /// Sticky Facts (день-10): обновить KV-память по диалогу. Категории-ключи —
+    /// Цель / Ограничения / Предпочтения / Решения / Договорённости (+ уточнённые).
+    /// Возвращает ПОЛНЫЙ обновлённый список пар «ключ-значение».
+    func stickyFacts(current: [FactKV], conversation: [ChatMessage]) async throws -> [FactKV] {
+        let system = """
+        Ты ведёшь компактную KV-память по диалогу сбора ТЗ. Ключи — категории важного: \
+        Цель, Ограничения, Предпочтения, Решения, Договорённости (можно уточнённые ключи: \
+        «Бюджет», «Сроки», «Стек», «Аудитория» и т.п.). На входе — текущие факты и диалог. \
+        Верни ОБНОВЛЁННЫЙ полный список строк формата «ключ: значение»: добавь новое, \
+        ЗАМЕНИ изменившееся, убери противоречия и дубли. Только важное из диалога, не выдумывай. \
+        Кратко, по-русски, без пояснений и нумерации, по одной паре на строку. До ~12 строк.
+        """
+        let body = "Текущие факты:\n"
+            + (current.isEmpty ? "—" : current.map { "\($0.key): \($0.value)" }.joined(separator: "\n"))
+            + "\n\nДиалог:\n" + transcript(conversation)
+
+        let requests = [
+            ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
+            ChatMessageRequest(role: .user, text: body, imageDataURL: nil)
+        ]
+        let raw = try await client.complete(
+            messages: requests,
+            model: cheapModel,
+            params: GenerationParams(temperature: 0.2, maxTokens: 400)
+        )
+        let parsed = parseKV(raw)
+        return parsed.isEmpty ? current : parsed   // safety: не теряем память
+    }
+
     /// Почистить список фактов: объединить дубли/близкое, убрать устаревшее и
     /// противоречивое. Агент сам приводит память в порядок (дешёвая модель).
     func consolidate(facts: [String]) async throws -> [String] {
@@ -201,6 +230,28 @@ struct MemoryService {
             let who = msg.role == .user ? "Пользователь" : (msg.role == .assistant ? "Ассистент" : "Система")
             return "\(who): \(msg.content)"
         }.joined(separator: "\n")
+    }
+
+    /// Распарсить ответ модели в KV-пары «ключ: значение» (по строкам).
+    private func parseKV(_ raw: String) -> [FactKV] {
+        var seen = Set<String>()
+        var result: [FactKV] = []
+        for line in raw.components(separatedBy: "\n") {
+            var s = line.trimmingCharacters(in: .whitespaces)
+            while let first = s.first, "-*•0123456789. ".contains(first) {
+                s.removeFirst()
+                s = s.trimmingCharacters(in: .whitespaces)
+            }
+            guard let sep = s.firstIndex(of: ":") else { continue }
+            let key = String(s[..<sep]).trimmingCharacters(in: .whitespaces)
+            let value = String(s[s.index(after: sep)...]).trimmingCharacters(in: .whitespaces)
+            guard key.count >= 2, value.count >= 1 else { continue }
+            let lowerKey = key.lowercased()
+            guard !seen.contains(lowerKey) else { continue }
+            seen.insert(lowerKey)
+            result.append(FactKV(key: key, value: value))
+        }
+        return result
     }
 
     private func parseFacts(_ raw: String, known: [String]) -> [String] {

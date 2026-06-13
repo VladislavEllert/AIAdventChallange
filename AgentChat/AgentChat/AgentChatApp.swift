@@ -10,6 +10,6 @@ struct AgentChatApp: App {
             HomeView()
                 .preferredColorScheme(ThemeMode(rawValue: themeRaw)?.colorScheme ?? nil)
         }
-        .modelContainer(for: [AgentProfile.self, ChatSession.self, StoredMessage.self])
+        .modelContainer(for: [AgentProfile.self, ChatSession.self, StoredMessage.self, ConversationBranch.self])
     }
 }

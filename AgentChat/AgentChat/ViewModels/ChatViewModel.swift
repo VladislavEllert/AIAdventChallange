@@ -25,6 +25,32 @@ final class ChatViewModel {
     private let memory = MemoryService()
     private var lastExtractCount = 0
 
+    // MARK: - Стратегия контекста (день-10)
+
+    /// Стратегия текущего агента. `.standard` — «мои» агенты (summary-стек дня 7/9).
+    var strategyKind: ContextStrategyKind { profile?.strategy ?? .standard }
+    /// Тест-агент (вкладка «Тестовые») — отдельный путь без summary.
+    var isTestAgent: Bool { strategyKind != .standard }
+    private var isBranching: Bool { strategyKind == .branching }
+    private var isStickyFacts: Bool { strategyKind == .stickyFacts }
+
+    /// KV-факты текущего чата (стратегия Sticky Facts) — для UI/индикатора.
+    var stickyFacts: [FactKV] { chat?.stickyFacts ?? [] }
+    /// Идёт обновление KV-фактов после сообщения юзера.
+    var isUpdatingFacts = false
+
+    /// Ветки текущего чата (стратегия Branching) для чипсов в UI.
+    private(set) var branchChips: [BranchChip] = []
+    var activeBranchID: UUID? { chat?.activeBranchID }
+
+    struct BranchChip: Identifiable {
+        let id: UUID
+        let name: String
+        let messageCount: Int
+        let isActive: Bool
+        let isMain: Bool
+    }
+
     var messages: [ChatMessage] = []
     var attachedImage: Data?
     var isLoading = false
@@ -123,15 +149,30 @@ final class ChatViewModel {
         lastPromptTokens = 0
         trimmedCount = 0
         streamingID = nil
-        agent?.facts = profile.facts
         agent?.summary = nil
         agent?.setWindow([])
+
+        if isTestAgent {
+            // Тест-агенты не используют долгие факты дня-7; память — по стратегии.
+            agent?.facts = []
+            agent?.factsKV = []
+            if isBranching { ensureRootBranch(session) }
+            refreshBranchChips()
+        } else {
+            agent?.facts = profile.facts
+        }
     }
 
     func open(_ session: ChatSession) {
         chat = session
         streamingID = nil
         trimmedCount = 0
+
+        if isTestAgent {
+            openTestAgent(session)
+            return
+        }
+
         let stored = session.sortedMessages
         messages = stored.map { $0.asChatMessage }
         lastExtractCount = messages.count
@@ -145,6 +186,32 @@ final class ChatViewModel {
             ChatMessage(role: $0.role, content: $0.content.isEmpty ? "[фото]" : $0.content)
         }
         agent?.setWindow(Array(windowMsgs))
+    }
+
+    /// Открытие тест-агента (день-10): без summary. Стратегия сама режет окно при запросе,
+    /// поэтому в agent.history кладём ПОЛНУЮ активную нить (для branching — активную ветку).
+    private func openTestAgent(_ session: ChatSession) {
+        agent?.summary = nil
+        agent?.facts = []
+
+        if isBranching { ensureRootBranch(session) }
+        let stored = branchAwareMessages(session)
+        messages = stored.map { $0.asChatMessage }
+        lastExtractCount = messages.count
+        lastPromptTokens = stored.last(where: { $0.role == .assistant })?.promptTokens ?? 0
+
+        agent?.factsKV = isStickyFacts ? session.stickyFacts : []
+        let thread = stored.filter { $0.role != .system }.map {
+            ChatMessage(role: $0.role, content: $0.content.isEmpty ? "[фото]" : $0.content)
+        }
+        agent?.setWindow(thread)
+        refreshBranchChips()
+    }
+
+    /// Сообщения активной ветки (branching) либо все (остальные стратегии), по порядку.
+    private func branchAwareMessages(_ session: ChatSession) -> [StoredMessage] {
+        guard isBranching, let active = session.activeBranchID else { return session.sortedMessages }
+        return session.messages.filter { $0.branchID == active }.sorted { $0.createdAt < $1.createdAt }
     }
 
     /// Чат удалён извне (из списка). Если это текущий — переключиться на другой/новый.
@@ -169,20 +236,20 @@ final class ChatViewModel {
         guard let chat else { return }
         agent.model = selectedModelID
 
-        // Ручная команда «сжать контекст» — не обычное сообщение, а запуск компактации.
-        if image == nil, isCompactCommand(text) {
+        // Ручная команда «сжать контекст» — только для «моих» агентов (summary).
+        if image == nil, !isTestAgent, isCompactCommand(text) {
             Task { await compactNow(auto: false) }
             return
         }
 
         attachedImage = nil
         errorText = nil
-        // Демо переполнения: лимит окна = токен-бюджет. Превысили → старые сообщения
-        // выкидываются из промпта (страховка, чтобы не упереться в стену) → модель забывает.
-        let budget: Int? = (summaryEnabled && demoLimitEnabled) ? effectiveContextLimit : nil
+        // Демо переполнения: лимит окна = токен-бюджет. Только «мои» агенты; тест-агенты режут окно стратегией.
+        let budget: Int? = (!isTestAgent && summaryEnabled && demoLimitEnabled) ? effectiveContextLimit : nil
+        let branchID: UUID? = isBranching ? chat.activeBranchID : nil
 
         messages.append(ChatMessage(role: .user, content: text, imageData: image))
-        persist(role: .user, content: text, imageData: image, to: chat, context: context)
+        persist(role: .user, content: text, imageData: image, to: chat, context: context, branchID: branchID)
         if chat.title == "Новый чат" {
             chat.title = makeTitle(text: text, hasImage: image != nil)
         }
@@ -191,9 +258,11 @@ final class ChatViewModel {
         let start = Date()
 
         Task {
-            // Авто-компактация при подходе к лимиту: сжать старое окно → токены падают.
-            // Если сработала — окно уже урезано, второй (message-count) проход не нужен.
-            let didCompact = (summaryEnabled && estimatedContextTokens(plus: text) >= compactThreshold)
+            // Sticky Facts: обновляем KV ПОСЛЕ сообщения юзера и ДО ответа → свежие факты уходят в запрос.
+            if isStickyFacts { await updateStickyFacts(chat: chat, userText: text) }
+
+            // Авто-компактация (только «мои» агенты): сжать старое окно у лимита → токены падают.
+            let didCompact = (!isTestAgent && summaryEnabled && estimatedContextTokens(plus: text) >= compactThreshold)
                 ? await compactNow(auto: true)
                 : false
 
@@ -217,8 +286,8 @@ final class ChatViewModel {
                 }
                 if let usage { lastPromptTokens = usage.promptTokens }
                 persist(role: .assistant, content: finalText, imageData: nil, to: chat, context: context,
-                        usage: usage, responseTime: elapsed, modelID: modelID)
-                if summaryEnabled, !didCompact { await compressIfNeeded(chat: chat) }
+                        usage: usage, responseTime: elapsed, modelID: modelID, branchID: branchID)
+                if !isTestAgent, summaryEnabled, !didCompact { await compressIfNeeded(chat: chat) }
             } catch {
                 messages.removeAll { $0.id == placeholderID }   // убрать незавершённый ответ
                 errorText = friendlyError(error)
@@ -226,7 +295,148 @@ final class ChatViewModel {
             streamingID = nil
             isLoading = false
             try? context.save()
+            if isBranching { refreshBranchChips() }
         }
+    }
+
+    // MARK: - Sticky Facts (день-10, стратегия 2)
+
+    /// Обновить KV-память чата по диалогу + последнему сообщению юзера. Дешёвая модель.
+    private func updateStickyFacts(chat: ChatSession, userText: String) async {
+        guard let agent, hasKey else { return }
+        isUpdatingFacts = true
+        defer { isUpdatingFacts = false }
+        let convo = messages.filter { $0.role != .system }
+        guard let updated = try? await memory.stickyFacts(current: chat.stickyFacts, conversation: convo) else { return }
+        chat.stickyFacts = updated
+        agent.factsKV = updated
+        try? context?.save()
+    }
+
+    // MARK: - Branching (день-10, стратегия 3)
+
+    /// Гарантировать корневую ветку у branching-чата + привязать к ней «бесхозные» сообщения.
+    private func ensureRootBranch(_ session: ChatSession) {
+        guard let context else { return }
+        let chatID: UUID? = session.id
+        let existing = (try? context.fetch(
+            FetchDescriptor<ConversationBranch>(predicate: #Predicate { $0.chatID == chatID })
+        )) ?? []
+        let root: ConversationBranch
+        if let first = existing.min(by: { $0.createdAt < $1.createdAt }) {
+            root = first
+        } else {
+            root = ConversationBranch(chatID: session.id, name: "Основная", isMain: true)
+            context.insert(root)
+        }
+        // Миграция: если ни одна ветка не помечена основной — сделать ей корень.
+        if !existing.contains(where: { $0.isMain }) { root.isMain = true }
+        // Сообщения без ветки → в корень (миграция/безопасность).
+        for m in session.messages where m.branchID == nil { m.branchID = root.id }
+        if session.activeBranchID == nil { session.activeBranchID = root.id }
+        try? context.save()
+    }
+
+    /// Список веток чата для чипсов (с числом сообщений и отметкой активной).
+    private func allBranches(_ session: ChatSession) -> [ConversationBranch] {
+        guard let context else { return [] }
+        let chatID: UUID? = session.id
+        let branches = (try? context.fetch(
+            FetchDescriptor<ConversationBranch>(predicate: #Predicate { $0.chatID == chatID })
+        )) ?? []
+        return branches.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private func refreshBranchChips() {
+        guard isBranching, let chat else { branchChips = []; return }
+        branchChips = allBranches(chat).map { b in
+            let count = chat.messages.filter { $0.branchID == b.id && $0.role != .system }.count
+            return BranchChip(id: b.id, name: b.name, messageCount: count,
+                              isActive: b.id == chat.activeBranchID, isMain: b.isMain)
+        }
+    }
+
+    /// Перезагрузить нить активной ветки в UI и в агента (после форка/переключения/удаления).
+    private func reloadActiveThread() {
+        guard let chat, let agent else { return }
+        let stored = branchAwareMessages(chat)
+        messages = stored.map { $0.asChatMessage }
+        lastExtractCount = messages.count
+        lastPromptTokens = stored.last(where: { $0.role == .assistant })?.promptTokens ?? 0
+        agent.setWindow(stored.filter { $0.role != .system }.map {
+            ChatMessage(role: $0.role, content: $0.content.isEmpty ? "[фото]" : $0.content)
+        })
+    }
+
+    /// Сделать ветку основной (каноническая линия) — остальные снимают флаг.
+    func makeBranchMain(_ id: UUID) {
+        guard isBranching, let chat, let context else { return }
+        for b in allBranches(chat) { b.isMain = (b.id == id) }
+        try? context.save()
+        refreshBranchChips()
+    }
+
+    /// Удалить ветку (+её сообщения). Нельзя удалить последнюю. Если удаляем активную/основную —
+    /// откатываемся на основную/старейшую из оставшихся.
+    func deleteBranch(_ id: UUID) {
+        guard isBranching, let context, let chat else { return }
+        let branches = allBranches(chat)
+        guard branches.count > 1, let target = branches.first(where: { $0.id == id }) else { return }
+        let wasMain = target.isMain
+        let wasActive = chat.activeBranchID == id
+        let remaining = branches.filter { $0.id != id }
+
+        for m in chat.messages where m.branchID == id { context.delete(m) }
+        context.delete(target)
+
+        if wasMain, let newMain = remaining.min(by: { $0.createdAt < $1.createdAt }) {
+            newMain.isMain = true
+        }
+        if wasActive {
+            let fallback = remaining.first(where: { $0.isMain }) ?? remaining.min(by: { $0.createdAt < $1.createdAt })
+            chat.activeBranchID = fallback?.id
+        }
+        try? context.save()
+        reloadActiveThread()
+        refreshBranchChips()
+    }
+
+    /// Форк: создать новую ветку от текущей активной, скопировав сообщения до выбранного включительно.
+    /// Матчим по позиции в видимой нити (id ChatMessage ≠ id StoredMessage).
+    func forkBranch(after message: ChatMessage) {
+        guard isBranching, let context, let chat, let active = chat.activeBranchID else { return }
+        let visible = messages.filter { $0.role != .system }
+        guard let visIdx = visible.firstIndex(where: { $0.id == message.id }) else { return }
+        let thread = chat.messages.filter { $0.branchID == active && $0.role != .system }
+            .sorted { $0.createdAt < $1.createdAt }
+        guard visIdx < thread.count else { return }
+        let prefix = Array(thread.prefix(visIdx + 1))
+
+        let index = allBranches(chat).count + 1
+        let branch = ConversationBranch(chatID: chat.id, name: "Ветка \(index)", parentBranchID: active)
+        context.insert(branch)
+        // Копируем префикс в новую ветку как независимые сообщения.
+        for src in prefix {
+            let copy = StoredMessage(role: src.role, content: src.content, imageData: src.imageData,
+                                     usage: src.usage, responseTime: src.responseTime, modelID: src.modelID,
+                                     branchID: branch.id)
+            copy.chat = chat
+            chat.messages.append(copy)
+            context.insert(copy)
+        }
+        chat.activeBranchID = branch.id
+        try? context.save()
+        reloadActiveThread()
+        refreshBranchChips()
+    }
+
+    /// Переключиться на ветку: сменить активную, перезагрузить нить в UI и агента.
+    func switchBranch(to branchID: UUID) {
+        guard isBranching, let chat, branchID != chat.activeBranchID else { return }
+        chat.activeBranchID = branchID
+        try? context?.save()
+        reloadActiveThread()
+        refreshBranchChips()
     }
 
     /// Понятное сообщение об ошибке. Отдельно ловим переполнение контекста (что и ломается).
@@ -374,7 +584,7 @@ final class ChatViewModel {
 
     /// Авто-извлечение фактов при уходе из чата (дешёвая модель, 1 раз на новые сообщения).
     func extractFactsOnLeave() {
-        guard autoMemoryEnabled else { return }
+        guard !isTestAgent, autoMemoryEnabled else { return }
         guard let profile, let agent, hasKey, messages.count > lastExtractCount else { return }
         let snapshot = messages
         let known = profile.facts
@@ -414,9 +624,10 @@ final class ChatViewModel {
     }
 
     private func persist(role: Role, content: String, imageData: Data?, to chat: ChatSession, context: ModelContext,
-                         usage: TokenUsage? = nil, responseTime: Double? = nil, modelID: String? = nil) {
+                         usage: TokenUsage? = nil, responseTime: Double? = nil, modelID: String? = nil,
+                         branchID: UUID? = nil) {
         let stored = StoredMessage(role: role, content: content, imageData: imageData,
-                                   usage: usage, responseTime: responseTime, modelID: modelID)
+                                   usage: usage, responseTime: responseTime, modelID: modelID, branchID: branchID)
         stored.chat = chat
         chat.messages.append(stored)
         context.insert(stored)
