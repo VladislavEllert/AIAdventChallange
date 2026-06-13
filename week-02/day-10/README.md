@@ -8,7 +8,7 @@
 > - **[ChatSession.swift](../../AgentChat/AgentChat/Models/ChatSession.swift)** — `ConversationBranch`, `branchID`, `stickyFacts` (KV), `activeBranchID`.
 > - **[AgentProfile.swift](../../AgentChat/AgentChat/Models/AgentProfile.swift)** — `strategy` + `isCourseTest` + 3 встроенных тест-агента.
 
-> ▶ **Видео:** _(записывается)_
+> ▶ **Видео:** https://www.loom.com/share/2383219a98a4483cb535fb2230070678
 
 Продолжение приложения [AgentChat](../../AgentChat/). Развивает память дней 7–9, но **без summary** — три других подхода к контексту.
 

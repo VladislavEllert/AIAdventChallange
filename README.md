@@ -34,7 +34,7 @@
 | 02 | 07 | Сохранение контекста: SQLite-персистенция + долгая память (факты), сжатие, JSON-экспорт | done | [week-02/day-07](week-02/day-07/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/f35016674e984ab6a81f10998e507ba0) |
 | 02 | 08 | Токены и контекстное окно: подсчёт токенов, рост ₽, стриминг, компактация в summary, что ломается при переполнении | done | [week-02/day-08](week-02/day-08/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/2f4052d188a34c45a730ead89fb72a7e) |
 | 02 | 09 | Сжатие истории: последние N «как есть» + старое в summary, подстановка вместо полной истории, сравнение качества/токенов без и со сжатием | done | [week-02/day-09](week-02/day-09/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/cbeff47284d641ad913540f47d3b14e1) |
-| 02 | 10 | Управление контекстом: 3 стратегии (без summary) — Sliding Window / Sticky Facts (KV) / Branching как 3 тест-агента + раздел «Мои \| Тестовые» | todo | [week-02/day-10](week-02/day-10/) · [AgentChat](AgentChat/) | _(скоро)_ |
+| 02 | 10 | Управление контекстом: 3 стратегии (без summary) — Sliding Window / Sticky Facts (KV) / Branching как 3 тест-агента + раздел «Мои \| Тестовые» | done | [week-02/day-10](week-02/day-10/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/2383219a98a4483cb535fb2230070678) |
 
 ## Приложение AgentChat (неделя 2)
 
