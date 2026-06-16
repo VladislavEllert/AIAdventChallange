@@ -8,8 +8,6 @@ struct HomeView: View {
     @State private var showCreate = false
     @State private var showSettings = false
     @State private var editingAgent: AgentProfile?
-    /// Раздел: false — «Мои агенты» (summary-стек), true — «Тестовые» (стратегии дня-10).
-    @State private var showTest = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 14),
@@ -17,7 +15,7 @@ struct HomeView: View {
     ]
 
     private var visibleAgents: [AgentProfile] {
-        agents.filter { $0.isCourseTest == showTest }
+        agents.filter { !$0.isCourseTest }
     }
 
     var body: some View {
@@ -26,23 +24,6 @@ struct HomeView: View {
                 AmbientBackground()
 
                 ScrollView {
-                    Picker("Раздел", selection: $showTest) {
-                        Text("Мои агенты").tag(false)
-                        Text("Тестовые").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                    if showTest {
-                        Text("Полигон дня-10: три стратегии управления контекстом (без summary).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 4)
-                    }
-
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(visibleAgents) { agent in
                             NavigationLink(value: agent) {
@@ -65,14 +46,12 @@ struct HomeView: View {
                             }
                         }
 
-                        if !showTest {
-                            Button {
-                                showCreate = true
-                            } label: {
-                                CreateAgentCard()
-                            }
-                            .buttonStyle(PressableCardStyle())
+                        Button {
+                            showCreate = true
+                        } label: {
+                            CreateAgentCard()
                         }
+                        .buttonStyle(PressableCardStyle())
                     }
                     .padding(16)
                 }

@@ -104,6 +104,31 @@ struct MemoryService {
         return parsed.isEmpty ? current : parsed   // safety: не теряем память
     }
 
+    /// Рабочая память (день-11): извлечь контекст текущей задачи из диалога.
+    /// Объединяет с existing (если есть), убирает дубли. Дешёвая модель.
+    func extractTaskContext(messages: [ChatMessage], existing: String?) async throws -> String {
+        let system = """
+        Из диалога извлеки: текущую задачу, принятые решения, важный технический контекст. \
+        Кратко, bullet-points, по-русски. Если есть «Уже сохранено» — объедини с ним, убери дубли. \
+        Только то, что реально обсуждалось. До 8 пунктов. Верни только список, без пояснений.
+        """
+        var body = ""
+        if let existing, !existing.isEmpty {
+            body += "Уже сохранено:\n\(existing)\n\n"
+        }
+        body += "Диалог:\n" + transcript(messages)
+
+        let requests = [
+            ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
+            ChatMessageRequest(role: .user, text: body, imageDataURL: nil)
+        ]
+        return try await client.complete(
+            messages: requests,
+            model: cheapModel,
+            params: GenerationParams(temperature: 0.2, maxTokens: 300)
+        )
+    }
+
     /// Почистить список фактов: объединить дубли/близкое, убрать устаревшее и
     /// противоречивое. Агент сам приводит память в порядок (дешёвая модель).
     func consolidate(facts: [String]) async throws -> [String] {

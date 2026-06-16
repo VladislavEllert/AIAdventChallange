@@ -9,11 +9,13 @@ struct ChatView: View {
         case settings
         case export(String)
         case stats
+        case memory
         var id: Int {
             switch self {
             case .settings: return 0
             case .export: return 1
             case .stats: return 2
+            case .memory: return 3
             }
         }
     }
@@ -59,6 +61,11 @@ struct ChatView: View {
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
+                        Button { activeSheet = .memory } label: {
+                            Image(systemName: "brain")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Button { activeSheet = .stats } label: {
                                 Label("Статистика чата (токены)", systemImage: "number")
@@ -86,6 +93,7 @@ struct ChatView: View {
                     case .settings: SettingsView()
                     case .export(let json): MemoryExportSheet(json: json)
                     case .stats: ChatStatsSheet(vm: vm)
+                    case .memory: MemorySheet(vm: vm)
                     }
                 }
                 .onAppear {
@@ -158,8 +166,14 @@ struct ChatView: View {
                                         Button {
                                             vm.remember(message.content)
                                         } label: {
-                                            Label("Запомнить", systemImage: "brain")
+                                            Label("Запомнить (факт агента)", systemImage: "brain")
                                         }
+                                    }
+                                    // День-11: сохранить в глобальный профиль (долговременная память).
+                                    Button {
+                                        vm.saveToProfile(message.content)
+                                    } label: {
+                                        Label("В долговременную память", systemImage: "pin")
                                     }
                                 }
                             }

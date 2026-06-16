@@ -14,6 +14,8 @@ final class ChatSession {
     var stickyFactsData: Data?
     /// Branching (день-10): активная ветка диалога. nil → ветвление не используется (обычный линейный чат).
     var activeBranchID: UUID?
+    /// Рабочая память (день-11): контекст текущей задачи — авто-извлекается LLM по ходу чата.
+    var taskContext: String?
     @Relationship(deleteRule: .cascade, inverse: \StoredMessage.chat)
     var messages: [StoredMessage]
 

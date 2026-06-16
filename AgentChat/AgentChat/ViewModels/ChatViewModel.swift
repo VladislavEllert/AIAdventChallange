@@ -39,6 +39,21 @@ final class ChatViewModel {
     /// Идёт обновление KV-фактов после сообщения юзера.
     var isUpdatingFacts = false
 
+    // MARK: - День-11: рабочая и долговременная память
+
+    /// Рабочая память: контекст текущей задачи (per-chat, авто-извлекается).
+    var taskContext: String? { chat?.taskContext }
+    /// Идёт извлечение рабочей памяти.
+    var isUpdatingTaskContext = false
+    /// Долговременная память: глобальный профиль (UserDefaults, общий для всех чатов).
+    var globalProfile: String {
+        get { UserDefaults.standard.string(forKey: "globalProfile") ?? "" }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "globalProfile")
+            agent?.globalProfile = newValue
+        }
+    }
+
     /// Ветки текущего чата (стратегия Branching) для чипсов в UI.
     private(set) var branchChips: [BranchChip] = []
     var activeBranchID: UUID? { chat?.activeBranchID }
@@ -130,6 +145,7 @@ final class ChatViewModel {
         self.profile = profile
         self.agent = Agent(profile: profile, model: selectedModelID)
         self.agent?.facts = profile.facts
+        self.agent?.globalProfile = globalProfile
 
         if let last = latestChat() {
             open(last)
@@ -150,6 +166,7 @@ final class ChatViewModel {
         trimmedCount = 0
         streamingID = nil
         agent?.summary = nil
+        agent?.taskContext = nil
         agent?.setWindow([])
 
         if isTestAgent {
@@ -179,6 +196,8 @@ final class ChatViewModel {
         lastPromptTokens = stored.last(where: { $0.role == .assistant })?.promptTokens ?? 0
 
         agent?.facts = profile?.facts ?? []
+        agent?.globalProfile = globalProfile
+        agent?.taskContext = session.taskContext
         agent?.summary = summaryEnabled ? session.summary : nil
         // в модель уходит только окно последних N; старое — в summary.
         // Системные плашки (сжатие) — только для UI, в контекст модели НЕ кладём.
@@ -288,6 +307,8 @@ final class ChatViewModel {
                 persist(role: .assistant, content: finalText, imageData: nil, to: chat, context: context,
                         usage: usage, responseTime: elapsed, modelID: modelID, branchID: branchID)
                 if !isTestAgent, summaryEnabled, !didCompact { await compressIfNeeded(chat: chat) }
+                // Рабочая память: авто-извлечение контекста задачи (фоново, не блокирует UI).
+                if !isTestAgent { Task { await updateTaskContext(chat: chat) } }
             } catch {
                 messages.removeAll { $0.id == placeholderID }   // убрать незавершённый ответ
                 errorText = friendlyError(error)
@@ -636,5 +657,33 @@ final class ChatViewModel {
     private func makeTitle(text: String, hasImage: Bool) -> String {
         let base = text.isEmpty && hasImage ? "Фото" : text
         return String(base.prefix(40))
+    }
+
+    // MARK: - День-11: рабочая и долговременная память
+
+    /// Авто-извлечение контекста текущей задачи из диалога (рабочая память).
+    private func updateTaskContext(chat: ChatSession) async {
+        guard hasKey else { return }
+        let convo = messages.filter { $0.role != .system }
+        guard convo.count >= 2 else { return }
+        isUpdatingTaskContext = true
+        defer { isUpdatingTaskContext = false }
+        guard let updated = try? await memory.extractTaskContext(messages: convo, existing: chat.taskContext) else { return }
+        let trimmed = updated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        chat.taskContext = trimmed
+        agent?.taskContext = trimmed
+        try? context?.save()
+    }
+
+    /// Сохранить текст сообщения в долговременную память (глобальный профиль).
+    /// Вызывается из contextMenu пузыря (long-press → «В долговременную память»).
+    func saveToProfile(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var current = globalProfile
+        if !current.isEmpty { current += "\n" }
+        current += "- \(trimmed)"
+        globalProfile = current
     }
 }
