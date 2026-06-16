@@ -104,6 +104,37 @@ struct MemoryService {
         return parsed.isEmpty ? current : parsed   // safety: не теряем память
     }
 
+    /// Долговременная память (день-11): обновить глобальный профиль пользователя по диалогу.
+    /// Строгий фильтр: ТОЛЬКО личная инфа о юзере. Без дубликатов (сравнивает с current).
+    func updateGlobalProfile(current: String, messages: [ChatMessage]) async throws -> String {
+        let system = """
+        Ты обновляешь долговременный профиль пользователя. \
+        Добавляй ТОЛЬКО личные факты: имя, возраст, город, образование/работа, \
+        интересы, стиль общения, долгосрочные цели/проекты, важные предпочтения.
+
+        НЕ добавляй (это НЕ долговременная память):
+        - детали текущей задачи, технические решения конкретного кода — это рабочая память;
+        - сиюминутные состояния, текущую дату/время;
+        - то что уже есть в «Текущий профиль» (не дублируй, даже близким по смыслу).
+        - новости, факты о мире.
+
+        Верни ОБНОВЛЁННЫЙ профиль: текущее оставь как есть, добавь только НОВЫЕ строки \
+        из диалога. Формат: «- факт» на каждой строке, по-русски, кратко. \
+        Если новых фактов нет — верни текущий профиль без изменений, без добавлений.
+        Максимум 20 строк итого.
+        """
+        let body = "Текущий профиль:\n\(current.isEmpty ? "—" : current)\n\nДиалог:\n" + transcript(messages)
+        let requests = [
+            ChatMessageRequest(role: .system, text: system, imageDataURL: nil),
+            ChatMessageRequest(role: .user, text: body, imageDataURL: nil)
+        ]
+        return try await client.complete(
+            messages: requests,
+            model: cheapModel,
+            params: GenerationParams(temperature: 0.2, maxTokens: 400)
+        )
+    }
+
     /// Рабочая память (день-11): извлечь контекст текущей задачи из диалога.
     /// Объединяет с existing (если есть), убирает дубли. Дешёвая модель.
     func extractTaskContext(messages: [ChatMessage], existing: String?) async throws -> String {

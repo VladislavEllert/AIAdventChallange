@@ -163,10 +163,6 @@ final class Agent {
         if let taskContext, !taskContext.isEmpty {
             text += "\n\n[РАБОЧАЯ ПАМЯТЬ — контекст задачи]\n\(taskContext)"
         }
-        // Факты о пользователе (per-agent).
-        if !facts.isEmpty {
-            text += "\n\nЧто ты помнишь о пользователе:\n" + facts.map { "- \($0)" }.joined(separator: "\n")
-        }
         // Краткосрочная: сжатая выжимка старой части диалога.
         if let summary, !summary.isEmpty {
             text += "\n\nКраткое содержание предыдущей части диалога:\n\(summary)"

@@ -603,19 +603,19 @@ final class ChatViewModel {
         UserDefaults.standard.object(forKey: "autoMemoryEnabled") as? Bool ?? true
     }
 
-    /// Авто-извлечение фактов при уходе из чата (дешёвая модель, 1 раз на новые сообщения).
+    /// Авто-обновление долговременной памяти (глобальный профиль) при уходе из чата.
+    /// Строгий промпт: только личная инфа о юзере, без дубликатов, без рабочих деталей.
     func extractFactsOnLeave() {
         guard !isTestAgent, autoMemoryEnabled else { return }
-        guard let profile, let agent, hasKey, messages.count > lastExtractCount else { return }
-        let snapshot = messages
-        let known = profile.facts
+        guard hasKey, messages.count > lastExtractCount else { return }
+        let snapshot = messages.filter { $0.role != .system }
+        let currentProfile = globalProfile
         lastExtractCount = messages.count
         Task {
-            // обновлённый ПОЛНЫЙ список: новое добавит, изменившееся заменит, дубли смёржит
-            guard let updated = try? await memory.updatedFacts(known: known, messages: snapshot) else { return }
-            profile.facts = updated
-            agent.facts = updated
-            try? context?.save()
+            guard let updated = try? await memory.updateGlobalProfile(current: currentProfile, messages: snapshot) else { return }
+            let trimmed = updated.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed != "—" else { return }
+            globalProfile = trimmed
         }
     }
 
