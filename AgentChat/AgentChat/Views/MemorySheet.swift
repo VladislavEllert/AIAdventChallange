@@ -6,6 +6,7 @@ struct MemorySheet: View {
 
     @AppStorage("globalProfile") private var globalProfile = ""
     @State private var showProfileEditor = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -83,6 +84,13 @@ struct MemorySheet: View {
             }
             .navigationTitle("Память")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                }
+            }
             .sheet(isPresented: $showProfileEditor) {
                 GlobalProfileSheet()
             }

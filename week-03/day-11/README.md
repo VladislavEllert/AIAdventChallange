@@ -1,88 +1,66 @@
-# День 11 — Модель памяти ассистента
+# День 11 — Модель памяти ассистента (memory layers)
 
-## ⭐ Главный код задания
+> ⭐ **Главный код задания:**
+> - **[Agent.swift](../../AgentChat/AgentChat/Agent/Agent.swift)** — `composedSystem()`: сборка промпта из 3 слоёв памяти (глобальный профиль → рабочая память → summary → окно сообщений).
+> - **[MemoryService.swift](../../AgentChat/AgentChat/Services/MemoryService.swift)** — `updateGlobalProfile()`: авто-извлечение долговременной памяти (строгий промпт, без дублей); `extractTaskContext()`: авто-извлечение рабочей памяти.
+> - **[ChatViewModel.swift](../../AgentChat/AgentChat/ViewModels/ChatViewModel.swift)** — `extractFactsOnLeave()`: обновление глобального профиля при уходе из чата; `updateTaskContext()`: авто-обновление рабочей памяти после каждого ответа; `saveToProfile()`: long-press → долговременная память.
+> - **[ChatSession.swift](../../AgentChat/AgentChat/Models/ChatSession.swift)** — поле `taskContext: String?` (рабочая память, per-chat, SQLite).
+> - **[MemorySheet.swift](../../AgentChat/AgentChat/Views/MemorySheet.swift)** — единый UI трёх слоёв памяти (кнопка 🧠 в тулбаре).
+> - **[GlobalProfileSheet.swift](../../AgentChat/AgentChat/Views/GlobalProfileSheet.swift)** — редактор долговременной памяти (глобальный профиль).
 
-- [`Agent.swift`](../../AgentChat/AgentChat/Agent/Agent.swift) — `composedSystem()`: сборка промпта из 3 слоёв памяти
-- [`MemoryService.swift`](../../AgentChat/AgentChat/Services/MemoryService.swift) — `updateGlobalProfile()`, `extractTaskContext()`: авто-извлечение в каждый слой
-- [`ChatViewModel.swift`](../../AgentChat/AgentChat/ViewModels/ChatViewModel.swift) — `extractFactsOnLeave()`, `updateTaskContext()`, `saveToProfile()`
-- [`MemorySheet.swift`](../../AgentChat/AgentChat/Views/MemorySheet.swift) — UI всех трёх слоёв (кнопка 🧠)
+> ▶ **Видео:** _ссылка появится после записи_
 
-Видео: [▶ Яндекс.Диск](https://disk.yandex.ru/i/PB0YJYNtyL0-gA)
+Продолжение приложения [AgentChat](../../AgentChat/). Развивает память дней 7–10: добавляет явную модель из трёх слоёв с раздельным хранением.
 
----
+## Задача
 
-## Задание
+Описать и реализовать модель памяти для ассистента. Разделить информацию минимум на 3 типа:
+- **краткосрочная** — текущий диалог
+- **рабочая** — данные текущей задачи
+- **долговременная** — профиль, решения, знания
 
-🔥 День 11. Модель памяти ассистента
+Сделать так, чтобы разные типы памяти хранились отдельно и явно выбиралось, что и куда сохраняется. Проверить влияние на ответы ассистента.
 
-Описать и реализовать модель памяти для ассистента.
-
-Разделить информацию минимум на 3 типа:
-- краткосрочная (текущий диалог)
-- рабочая (данные текущей задачи)
-- долговременная (профиль, решения, знания)
-
-Сделать так, чтобы:
-- разные типы памяти хранились отдельно
-- явно выбиралось, что и куда сохраняется
-
-Проверить:
-- какие данные попадают в каждый слой
-- как это влияет на ответы ассистента
-
----
-
-## Реализация
+## Что сделано
 
 ### 3 слоя памяти
 
-| Слой | Хранение | Scope | Как наполняется |
-|------|---------|-------|-----------------|
-| Краткосрочная | `ChatSession.messages` + `chat.summary` (SwiftData/SQLite) | per-chat | автоматически — окно N сообщений + сжатие в summary |
-| Рабочая | `ChatSession.taskContext: String?` (SwiftData/SQLite) | per-chat | авто-извлечение LLM после каждого ответа агента |
-| Долговременная | `UserDefaults("globalProfile")` (plist) | глобально — все чаты и агенты | вручную (редактор + long-press) + авто при уходе из чата |
+| Слой | Где хранится | Scope | Как наполняется |
+|------|-------------|-------|-----------------|
+| **Краткосрочная** | `ChatSession.messages` + `chat.summary` (SwiftData/SQLite) | per-chat | авто: окно N сообщений + сжатие старого в summary |
+| **Рабочая** | `ChatSession.taskContext: String?` (SwiftData/SQLite) | per-chat | авто: LLM извлекает цели/решения/контекст задачи после каждого ответа |
+| **Долговременная** | `UserDefaults("globalProfile")` | глобально — все чаты и агенты | авто при уходе из чата + вручную (редактор + long-press на сообщение) |
 
-### Как собирается системный промпт (Agent.composedSystem)
+### Как собирается системный промпт
 
 ```
-[SYSTEM BASE]
-<личность агента>
-
-[ДОЛГОВРЕМЕННАЯ ПАМЯТЬ — глобальный профиль]
-<UserDefaults globalProfile>          ← если не пустой
-
-[РАБОЧАЯ ПАМЯТЬ — контекст задачи]
-<ChatSession.taskContext>             ← если не nil
-
-[КРАТКОСРОЧНАЯ — summary старого диалога]
-<ChatSession.summary>                 ← если есть
-
---- messages[]: последние N сообщений ---
+[SYSTEM BASE]          ← личность агента
+[ДОЛГОВРЕМЕННАЯ]       ← globalProfile (UserDefaults) — если не пустой
+[РАБОЧАЯ ПАМЯТЬ]       ← chat.taskContext (SQLite) — если не nil
+[КРАТКОСРОЧНАЯ summary]← chat.summary (SQLite) — если есть
+--- messages[N] ---    ← последние N сообщений окна
 ```
-
-### UI — кнопка 🧠
-
-Нажатие на 🧠 в тулбаре чата открывает `MemorySheet` с тремя секциями:
-- **Краткосрочная** — кол-во сообщений в окне + текст summary
-- **Рабочая** — извлечённый контекст задачи (или спиннер пока обновляется)
-- **Долговременная** — глобальный профиль + кнопка редактировать
 
 ### Явный выбор что куда
 
-- **Long-press на сообщение → «В долговременную память»** — текст сообщения мгновенно добавляется в globalProfile
-- **Редактор профиля** — открывается из 🧠 или из настроек агента, свободный текст
-- **Авто-извлечение рабочей памяти** — LLM анализирует диалог после каждого ответа, извлекает цель/решения/контекст задачи
-- **Авто-извлечение долговременной** — при уходе из чата, строгий промпт: только личная инфа о пользователе, без дублей
+- **Long-press на сообщение → «В долговременную память»** — текст мгновенно добавляется в глобальный профиль
+- **Редактор профиля** (из 🧠 или настроек агента) — свободный текст, пользователь сам пишет
+- **Авто-извлечение рабочей памяти** — LLM анализирует диалог после каждого ответа, извлекает контекст задачи
+- **Авто-извлечение долговременной** — при уходе из чата, строгий промпт: только личная инфа о пользователе, без дублей, максимум 20 строк
 
-### Ключевые файлы
+### UI — кнопка 🧠
 
-```
-AgentChat/AgentChat/
-├── Agent/Agent.swift               — composedSystem(): сборка промпта
-├── Services/MemoryService.swift    — updateGlobalProfile(), extractTaskContext()
-├── Models/ChatSession.swift        — поле taskContext: String?
-├── ViewModels/ChatViewModel.swift  — вся логика обновления слоёв
-├── Views/MemorySheet.swift         — UI 3 слоёв (NEW)
-├── Views/GlobalProfileSheet.swift  — редактор долговременной памяти (NEW)
-└── Views/ChatView.swift            — кнопка 🧠, long-press contextMenu
-```
+Открывает `MemorySheet` с тремя секциями:
+- **Краткосрочная** — кол-во сообщений в окне + текст summary (если есть)
+- **Рабочая** — извлечённый контекст задачи (или спиннер пока обновляется)
+- **Долговременная** — глобальный профиль + кнопка «Редактировать»
+
+## Значимый код (для проверяющих)
+
+- [`Agent.swift`](../../AgentChat/AgentChat/Agent/Agent.swift) — `composedSystem()`: все 3 слоя инжектируются в system prompt.
+- [`MemoryService.swift`](../../AgentChat/AgentChat/Services/MemoryService.swift) — `updateGlobalProfile()`: строгий промпт без дублей; `extractTaskContext()`: рабочая память.
+- [`ChatSession.swift`](../../AgentChat/AgentChat/Models/ChatSession.swift) — поле `taskContext: String?`.
+- [`ChatViewModel.swift`](../../AgentChat/AgentChat/ViewModels/ChatViewModel.swift) — `extractFactsOnLeave()`, `updateTaskContext()`, `saveToProfile()`, `globalProfile` (UserDefaults).
+- [`MemorySheet.swift`](../../AgentChat/AgentChat/Views/MemorySheet.swift) — UI трёх слоёв (новый файл).
+- [`GlobalProfileSheet.swift`](../../AgentChat/AgentChat/Views/GlobalProfileSheet.swift) — редактор профиля (новый файл).
+- [`ChatView.swift`](../../AgentChat/AgentChat/Views/ChatView.swift) — кнопка 🧠 в toolbar, contextMenu «В долговременную память».
