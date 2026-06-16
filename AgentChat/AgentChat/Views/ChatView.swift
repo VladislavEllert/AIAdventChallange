@@ -162,18 +162,11 @@ struct ChatView: View {
                                         } label: {
                                             Label("Ветка отсюда", systemImage: "arrow.triangle.branch")
                                         }
-                                    } else if !vm.isTestAgent {
-                                        Button {
-                                            vm.remember(message.content)
-                                        } label: {
-                                            Label("Запомнить (факт агента)", systemImage: "brain")
-                                        }
                                     }
-                                    // День-11: сохранить в глобальный профиль (долговременная память).
                                     Button {
                                         vm.saveToProfile(message.content)
                                     } label: {
-                                        Label("В долговременную память", systemImage: "pin")
+                                        Label("В долговременную память", systemImage: "brain")
                                     }
                                 }
                             }
