@@ -8,7 +8,7 @@
 > - **[MemorySheet.swift](../../AgentChat/AgentChat/Views/MemorySheet.swift)** — единый UI трёх слоёв памяти (кнопка 🧠 в тулбаре).
 > - **[GlobalProfileSheet.swift](../../AgentChat/AgentChat/Views/GlobalProfileSheet.swift)** — редактор долговременной памяти (глобальный профиль).
 
-> ▶ **Видео:** _ссылка появится после записи_
+> ▶ **Видео:** https://www.loom.com/share/448df13307fd48d991a8dd3fd7d1da4a
 
 Продолжение приложения [AgentChat](../../AgentChat/). Развивает память дней 7–10: добавляет явную модель из трёх слоёв с раздельным хранением.
 
