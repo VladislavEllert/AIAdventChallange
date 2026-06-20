@@ -38,7 +38,7 @@
 | 03 | 11 | Модель памяти: 3 слоя (краткосрочная / рабочая / долговременная), авто-извлечение, MemorySheet UI | done | [week-03/day-11](week-03/day-11/) · [AgentChat](AgentChat/) | [▶](https://www.loom.com/share/448df13307fd48d991a8dd3fd7d1da4a) |
 | 03 | 12 | Персонализация: слоистый профиль (стиль/правила/стек), 2 профиля → разные ответы, авто-роутинг фактов, CLI/TUI (Python) | done | [agent-cli](agent-cli/) | [▶](https://www.loom.com/share/46f41dfce33b4181bed14f6802d003f3) |
 | 03 | 13 | Task State Machine: 4 стадии-агента (planning→execution→validation→done), детерминированные переходы, пауза / resume | done | [agent-cli](agent-cli/) | [▶](https://www.loom.com/share/e516f7eb3f634c52b6870968d3103ac2) |
-| 03 | 14 | Инварианты: хранение отдельно от диалога, инжект в промпт, LLM-проверка, отказ при нарушении | done | [agent-cli](agent-cli/) | — |
+| 03 | 14 | Инварианты: хранение отдельно от диалога, инжект в промпт, LLM-проверка, отказ при нарушении | done | [agent-cli](agent-cli/) | [▶](https://www.loom.com/share/216ee8cfa37f404087023ccd88672676) |
 | 04 | 15 | Контролируемые переходы: рой 3 агентов на PLANNING + Оркестратор на каждой стадии, SQLite-сессии с персистом, `/session` switch/rename/delete, `/task jump` FSM-демо | done | [agent-cli](agent-cli/) | — |
 
 ## Приложение AgentChat (неделя 2)
