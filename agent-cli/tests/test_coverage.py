@@ -288,10 +288,36 @@ def test_profile_load_missing_raises():
 
 # ── state/coordinator missing branches ────────────────────────────────────────
 
-def _make_coord_mock_responses(responses: list[str], tmp_dir: str):
-    """Helper: coordinator with mock provider returning given responses."""
+def _swarm_patch(
+    plan_ok: bool = True,
+    exec_ok: bool = True,
+    verdict_done: bool = True,
+    plan: str = "Plan. <<ПЛАН ГОТОВ>>",
+):
+    """
+    Context manager: патчит SwarmRunner в coordinator с нужными вердиктами.
+    Возвращает patch.object context manager.
+    """
+    from unittest.mock import patch, MagicMock
+
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
+
+    def start():
+        mock_cls = patcher.start()
+        inst = mock_cls.return_value
+        inst.run_swarm.return_value = [("Архитектор", "план")]
+        inst.synthesize_plan.return_value = plan
+        inst.check_plan.return_value = (plan_ok, "" if plan_ok else "plan incomplete")
+        inst.check_execution.return_value = (exec_ok, "" if exec_ok else "exec mismatch")
+        inst.final_verdict.return_value = (verdict_done, "" if verdict_done else "needs retry")
+        return inst
+
+    return patcher, start
+
+
+def _make_coord_mock(tmp_dir: str, responses: list[str]):
+    """Helper: mock provider + coordinator with given chat responses."""
     from agent_cli.llm.provider import LLMProvider
-    from agent_cli.state.coordinator import TaskCoordinator, TaskState
     import agent_cli.config as cfg
 
     call_idx = {"i": 0}
@@ -310,36 +336,53 @@ def _make_coord_mock_responses(responses: list[str], tmp_dir: str):
 
 
 def test_coordinator_validation_retry_path():
-    """Validation fails once → execution retried → validation OK."""
+    """Orchestrator: verdict RETRY once → execution retried → DONE."""
     from agent_cli.state.coordinator import TaskCoordinator, TaskState
     from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER, VALIDATION_FAIL_MARKER
     import agent_cli.config as cfg
 
-    responses = [
-        "Шаг 1. <<ПЛАН ГОТОВ>>",             # planning
-        "Выполнено. <<ВЫПОЛНЕНО>>",           # execution 1
-        f"Ошибка. {VALIDATION_FAIL_MARKER}",  # validation fail
-        "Исправлено. <<ВЫПОЛНЕНО>>",          # execution retry
-        f"Всё ок. {VALIDATION_OK_MARKER}",   # validation ok
+    # Provider.chat: execution1, validation-fail, execution2, validation-ok
+    provider_responses = [
+        "Выполнено. <<ВЫПОЛНЕНО>>",
+        f"Ошибка. {VALIDATION_FAIL_MARKER}",
+        "Исправлено. <<ВЫПОЛНЕНО>>",
+        f"Всё ок. {VALIDATION_OK_MARKER}",
     ]
 
+    # Оркестратор: check_execution ok, final_verdict fail first → ok second
+    verdicts = {"call": 0}
+
+    def fake_final_verdict(req, plan, val, out_fn):
+        verdicts["call"] += 1
+        if verdicts["call"] == 1:
+            return (False, "needs retry")
+        return (True, "")
+
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
     with tempfile.TemporaryDirectory() as tmp:
-        mock, orig = _make_coord_mock_responses(responses, tmp)
+        mock, orig = _make_coord_mock(tmp, provider_responses)
         try:
-            coord = TaskCoordinator(provider=mock, interactive=False)
-            task = TaskState("r001", "Задача с ретраем")
-            result = coord.run(task, output_fn=lambda _: None)
+            with patcher as mock_cls:
+                inst = mock_cls.return_value
+                inst.run_swarm.return_value = [("Архитектор", "план")]
+                inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+                inst.check_plan.return_value = (True, "")
+                inst.check_execution.return_value = (True, "")
+                inst.final_verdict.side_effect = fake_final_verdict
+
+                coord = TaskCoordinator(provider=mock, interactive=False)
+                task = TaskState("r001", "Задача с ретраем")
+                result = coord.run(task, output_fn=lambda _: None)
         finally:
             cfg.TASKS_DIR = orig
 
     assert result.stage == Stage.DONE
-    assert mock.chat.call_count == 5
 
 
 def test_coordinator_execution_gets_validation_feedback():
-    """On retry, execution agent receives validation feedback in prompt."""
+    """On execution retry, prompt contains validation feedback."""
     from agent_cli.state.coordinator import TaskCoordinator, TaskState
-    from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER, VALIDATION_FAIL_MARKER
+    from agent_cli.state.machine import VALIDATION_OK_MARKER, VALIDATION_FAIL_MARKER
     import agent_cli.config as cfg
 
     captured_prompts: list[str] = []
@@ -349,60 +392,74 @@ def test_coordinator_execution_gets_validation_feedback():
         captured_prompts.append(user_msg)
         calls = len(captured_prompts)
         if calls == 1:
-            return "Plan ready. <<ПЛАН ГОТОВ>>"
-        if calls == 2:
             return "Execution done. <<ВЫПОЛНЕНО>>"
-        if calls == 3:
+        if calls == 2:
             return f"Bad output. {VALIDATION_FAIL_MARKER}"
-        if calls == 4:
+        if calls == 3:
             return "Fixed. <<ВЫПОЛНЕНО>>"
         return f"All good. {VALIDATION_OK_MARKER}"
 
     mock = MagicMock()
     mock.chat.side_effect = fake_chat
 
+    verdicts = {"call": 0}
+
+    def fake_final_verdict(req, plan, val, out_fn):
+        verdicts["call"] += 1
+        return (False, "redo") if verdicts["call"] == 1 else (True, "")
+
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
     with tempfile.TemporaryDirectory() as tmp:
         import agent_cli.config as cfg
         orig = cfg.TASKS_DIR
         cfg.TASKS_DIR = tmp
         try:
-            coord = TaskCoordinator(provider=mock, interactive=False)
-            task = TaskState("fb001", "Сделай X")
-            coord.run(task, output_fn=lambda _: None)
+            with patcher as mock_cls:
+                inst = mock_cls.return_value
+                inst.run_swarm.return_value = [("A", "plan")]
+                inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+                inst.check_plan.return_value = (True, "")
+                inst.check_execution.return_value = (True, "")
+                inst.final_verdict.side_effect = fake_final_verdict
+
+                coord = TaskCoordinator(provider=mock, interactive=False)
+                task = TaskState("fb001", "Сделай X")
+                coord.run(task, output_fn=lambda _: None)
         finally:
             cfg.TASKS_DIR = orig
 
-    # 4th prompt is execution retry — should contain validation feedback
-    retry_prompt = captured_prompts[3]
+    # 3rd call to provider.chat is execution retry — should contain validation feedback
+    retry_prompt = captured_prompts[2]
     assert "Фидбек от валидации" in retry_prompt
 
 
 def test_coordinator_max_retries_stops():
-    """After MAX_RETRIES failed validations, coordinator stops gracefully."""
-    from agent_cli.state.coordinator import TaskCoordinator, TaskState, MAX_RETRIES
-    from agent_cli.state.machine import Stage, VALIDATION_FAIL_MARKER
+    """After MAX_RETRIES orchestrator RETRY verdicts, coordinator stops."""
+    from agent_cli.state.coordinator import TaskCoordinator, TaskState
+    from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
     import agent_cli.config as cfg
 
-    def fake_chat(messages, model, **kwargs):
-        user_msg = next((m["content"] for m in messages if m["role"] == "user"), "")
-        if "Задача" in user_msg and "План" not in user_msg and "Результат" not in user_msg:
-            return "Plan. <<ПЛАН ГОТОВ>>"
-        if "Результат" not in user_msg:
-            return "Exec. <<ВЫПОЛНЕНО>>"
-        return f"Always fails. {VALIDATION_FAIL_MARKER}"
-
-    mock = MagicMock()
-    mock.chat.side_effect = fake_chat
-
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
     with tempfile.TemporaryDirectory() as tmp:
         import agent_cli.config as cfg
         orig = cfg.TASKS_DIR
         cfg.TASKS_DIR = tmp
         try:
-            coord = TaskCoordinator(provider=mock, interactive=False)
-            task = TaskState("mx001", "Задача что всегда падает")
-            output_lines: list[str] = []
-            result = coord.run(task, output_fn=output_lines.append)
+            with patcher as mock_cls:
+                inst = mock_cls.return_value
+                inst.run_swarm.return_value = [("A", "plan")]
+                inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+                inst.check_plan.return_value = (True, "")
+                inst.check_execution.return_value = (True, "")
+                inst.final_verdict.return_value = (False, "always fails")
+
+                mock = MagicMock()
+                mock.chat.return_value = f"Done. {VALIDATION_OK_MARKER}"
+
+                coord = TaskCoordinator(provider=mock, interactive=False)
+                task = TaskState("mx001", "Задача что всегда падает")
+                output_lines: list[str] = []
+                result = coord.run(task, output_fn=output_lines.append)
         finally:
             cfg.TASKS_DIR = orig
 
@@ -411,28 +468,33 @@ def test_coordinator_max_retries_stops():
 
 
 def test_coordinator_pause_on_user_reject():
-    """User rejects confirmation → task pauses, resumable."""
+    """User rejects confirmation → task pauses at EXECUTION."""
     from agent_cli.state.coordinator import TaskCoordinator, TaskState
     from agent_cli.state.machine import Stage
     import agent_cli.config as cfg
 
-    responses = ["Plan done. <<ПЛАН ГОТОВ>>"]
-
-    mock = MagicMock()
-    mock.chat.side_effect = responses
-
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
     with tempfile.TemporaryDirectory() as tmp:
         orig = cfg.TASKS_DIR
         cfg.TASKS_DIR = tmp
         try:
-            coord = TaskCoordinator(provider=mock, interactive=True)
-            task = TaskState("p001", "Пауза задача")
-            output_lines: list[str] = []
-            result = coord.run(
-                task,
-                output_fn=output_lines.append,
-                confirm_fn=lambda _: False,  # always reject
-            )
+            with patcher as mock_cls:
+                inst = mock_cls.return_value
+                inst.run_swarm.return_value = [("A", "plan")]
+                inst.synthesize_plan.return_value = "Plan done. <<ПЛАН ГОТОВ>>"
+                inst.check_plan.return_value = (True, "")
+                inst.check_execution.return_value = (True, "")
+                inst.final_verdict.return_value = (True, "")
+
+                mock = MagicMock()
+                coord = TaskCoordinator(provider=mock, interactive=True)
+                task = TaskState("p001", "Пауза задача")
+                output_lines: list[str] = []
+                result = coord.run(
+                    task,
+                    output_fn=output_lines.append,
+                    confirm_fn=lambda _: False,  # always reject
+                )
         finally:
             cfg.TASKS_DIR = orig
 
@@ -441,38 +503,38 @@ def test_coordinator_pause_on_user_reject():
 
 
 def test_coordinator_pause_confirm_continue():
-    """User accepts confirmation → pipeline continues."""
+    """User accepts all confirmations → pipeline runs to DONE."""
     from agent_cli.state.coordinator import TaskCoordinator, TaskState
     from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
     import agent_cli.config as cfg
 
-    responses = [
-        "Plan. <<ПЛАН ГОТОВ>>",
-        "Exec. <<ВЫПОЛНЕНО>>",
-        f"OK. {VALIDATION_OK_MARKER}",
-    ]
-    call_idx = {"i": 0}
-
-    def fake_chat(messages, model, **kwargs):
-        r = responses[min(call_idx["i"], len(responses) - 1)]
-        call_idx["i"] += 1
-        return r
-
-    mock = MagicMock()
-    mock.chat.side_effect = fake_chat
-
+    patcher = patch("agent_cli.state.coordinator.SwarmRunner")
     with tempfile.TemporaryDirectory() as tmp:
         import agent_cli.config as cfg
         orig = cfg.TASKS_DIR
         cfg.TASKS_DIR = tmp
         try:
-            coord = TaskCoordinator(provider=mock, interactive=True)
-            task = TaskState("c001", "Полный прогон с подтверждением")
-            result = coord.run(
-                task,
-                output_fn=lambda _: None,
-                confirm_fn=lambda _: True,  # always accept
-            )
+            with patcher as mock_cls:
+                inst = mock_cls.return_value
+                inst.run_swarm.return_value = [("A", "plan")]
+                inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+                inst.check_plan.return_value = (True, "")
+                inst.check_execution.return_value = (True, "")
+                inst.final_verdict.return_value = (True, "")
+
+                mock = MagicMock()
+                mock.chat.side_effect = [
+                    "Exec. <<ВЫПОЛНЕНО>>",
+                    f"OK. {VALIDATION_OK_MARKER}",
+                ]
+
+                coord = TaskCoordinator(provider=mock, interactive=True)
+                task = TaskState("c001", "Полный прогон с подтверждением")
+                result = coord.run(
+                    task,
+                    output_fn=lambda _: None,
+                    confirm_fn=lambda _: True,
+                )
         finally:
             cfg.TASKS_DIR = orig
 
@@ -821,11 +883,11 @@ def test_tui_prompt_fallback_no_session():
 
 
 def test_tui_prompt_uses_session():
-    """_prompt uses session.prompt() when session set."""
+    """_prompt uses prompt_session.prompt() when set."""
     tui = _make_tui()
     mock_session = MagicMock()
     mock_session.prompt.return_value = "from_session"
-    tui.session = mock_session
+    tui.prompt_session = mock_session
     result = tui._prompt("Q: ")
     assert result == "from_session"
     mock_session.prompt.assert_called_once_with("Q: ")
@@ -922,12 +984,15 @@ def _run_tui_with_inputs(inputs: list[str], tmp_path=None):
     """Run TUI REPL with a scripted list of inputs, returns the TUI instance."""
     import agent_cli.config as cfg
     import tempfile
+    import os
 
     tmp = tmp_path or tempfile.mkdtemp()
     orig_tasks = cfg.TASKS_DIR
     orig_invs = cfg.INVARIANTS_DIR
+    orig_sessions_db = cfg.SESSIONS_DB
     cfg.TASKS_DIR = str(tmp)
     cfg.INVARIANTS_DIR = str(tmp)
+    cfg.SESSIONS_DB = os.path.join(str(tmp), "sessions_test.db")
 
     inputs_iter = iter(inputs)
 
@@ -947,6 +1012,7 @@ def _run_tui_with_inputs(inputs: list[str], tmp_path=None):
     finally:
         cfg.TASKS_DIR = orig_tasks
         cfg.INVARIANTS_DIR = orig_invs
+        cfg.SESSIONS_DB = orig_sessions_db
 
     return tui
 
@@ -964,23 +1030,22 @@ def test_tui_run_exits_on_eof():
     _run_tui_with_inputs([])  # StopIteration → EOFError → break
 
 
-def test_tui_run_exits_on_keyboard_interrupt():
-    tui = _make_tui()
+def test_tui_run_exits_on_keyboard_interrupt(tmp_path):
     import agent_cli.config as cfg
-    import tempfile
-    tmp = tempfile.mkdtemp()
-    orig_tasks, orig_invs = cfg.TASKS_DIR, cfg.INVARIANTS_DIR
-    cfg.TASKS_DIR = cfg.INVARIANTS_DIR = tmp
+    orig_tasks, orig_invs, orig_db = cfg.TASKS_DIR, cfg.INVARIANTS_DIR, cfg.SESSIONS_DB
+    cfg.TASKS_DIR = cfg.INVARIANTS_DIR = str(tmp_path)
+    cfg.SESSIONS_DB = str(tmp_path / "s.db")
 
     class InterruptSession:
         def __init__(self, *a, **kw): pass
         def prompt(self, *a, **kw): raise KeyboardInterrupt
 
     try:
+        tui = _make_tui()
         with patch("agent_cli.tui.PromptSession", InterruptSession):
             tui.run()
     finally:
-        cfg.TASKS_DIR, cfg.INVARIANTS_DIR = orig_tasks, orig_invs
+        cfg.TASKS_DIR, cfg.INVARIANTS_DIR, cfg.SESSIONS_DB = orig_tasks, orig_invs, orig_db
 
 
 def test_tui_run_skip_empty_input():
@@ -1009,16 +1074,16 @@ def test_tui_run_state_no_task():
     _run_tui_with_inputs(["/state", "/exit"])
 
 
-def test_tui_run_state_with_task():
+def test_tui_run_state_with_task(tmp_path):
     from agent_cli.state.coordinator import TaskState
     from agent_cli.state.machine import Stage
     tui_holder = {}
 
-    def side_effect_run(inputs):
-        import agent_cli.config as cfg, tempfile
-        tmp = tempfile.mkdtemp()
-        orig_tasks, orig_invs = cfg.TASKS_DIR, cfg.INVARIANTS_DIR
-        cfg.TASKS_DIR = cfg.INVARIANTS_DIR = tmp
+    def side_effect_run(inputs, tmp_dir):
+        import agent_cli.config as cfg
+        orig_tasks, orig_invs, orig_db = cfg.TASKS_DIR, cfg.INVARIANTS_DIR, cfg.SESSIONS_DB
+        cfg.TASKS_DIR = cfg.INVARIANTS_DIR = tmp_dir
+        cfg.SESSIONS_DB = tmp_dir + "/s.db"
         inputs_iter = iter(inputs)
 
         class FakeSession:
@@ -1035,10 +1100,10 @@ def test_tui_run_state_with_task():
             with patch("agent_cli.tui.PromptSession", FakeSession):
                 tui.run()
         finally:
-            cfg.TASKS_DIR, cfg.INVARIANTS_DIR = orig_tasks, orig_invs
+            cfg.TASKS_DIR, cfg.INVARIANTS_DIR, cfg.SESSIONS_DB = orig_tasks, orig_invs, orig_db
         return tui
 
-    result = side_effect_run(["/state", "/exit"])
+    result = side_effect_run(["/state", "/exit"], str(tmp_path))
     assert result.current_task is not None
 
 
@@ -1054,14 +1119,16 @@ def test_tui_run_unknown_command():
     _run_tui_with_inputs(["/unknowncmd", "/exit"])
 
 
-def test_tui_run_chat_no_invariants():
+def test_tui_run_chat_no_invariants(tmp_path):
     from agent_cli.llm.provider import LLMProvider
     import agent_cli.config as cfg
-    import tempfile
 
-    tmp = tempfile.mkdtemp()
-    orig_tasks, orig_invs = cfg.TASKS_DIR, cfg.INVARIANTS_DIR
-    cfg.TASKS_DIR = cfg.INVARIANTS_DIR = tmp
+    orig_tasks = cfg.TASKS_DIR
+    orig_invs = cfg.INVARIANTS_DIR
+    orig_db = cfg.SESSIONS_DB
+    cfg.TASKS_DIR = str(tmp_path)
+    cfg.INVARIANTS_DIR = str(tmp_path)
+    cfg.SESSIONS_DB = str(tmp_path / "s.db")
 
     inputs = iter(["say something", "/exit"])
 
@@ -1073,6 +1140,7 @@ def test_tui_run_chat_no_invariants():
 
     from agent_cli.llm.provider import TokenUsage
     mock = MagicMock(spec=LLMProvider)
+    mock.chat.return_value = "summary text"  # for _try_summarize
     mock.chat_with_stats.return_value = ("I said something.", TokenUsage(prompt_tokens=10, completion_tokens=5))
 
     try:
@@ -1082,7 +1150,9 @@ def test_tui_run_chat_no_invariants():
         with patch("agent_cli.tui.PromptSession", FakeSession):
             tui.run()
     finally:
-        cfg.TASKS_DIR, cfg.INVARIANTS_DIR = orig_tasks, orig_invs
+        cfg.TASKS_DIR = orig_tasks
+        cfg.INVARIANTS_DIR = orig_invs
+        cfg.SESSIONS_DB = orig_db
 
 
 def test_tui_handle_profile_edit_no_profile():
@@ -1239,7 +1309,7 @@ def test_tui_toolbar_shows_token_stats():
         prompt_tokens=200, completion_tokens=100, total_tokens=300, cost_rub=0.015
     ))
     result = str(tui._toolbar())
-    assert "300tok" in result
+    # toolbar теперь показывает cost_rub, а не total tokens (формат обновлён)
     assert "0.0150" in result
 
 
@@ -1558,3 +1628,566 @@ def test_provider_abstract_bodies_not_callable():
     p = MinimalProvider()
     assert p.chat([], "m") == ""
     assert list(p.chat_stream([], "m")) == []
+
+
+# ── state/swarm SwarmRunner ───────────────────────────────────────────────────
+
+def _make_swarm_mock_provider(responses: list[str]):
+    """Mock LLMProvider returning responses in order."""
+    from unittest.mock import MagicMock
+    call_idx = {"i": 0}
+
+    def fake_chat(messages, model, **kwargs):
+        idx = min(call_idx["i"], len(responses) - 1)
+        call_idx["i"] += 1
+        return responses[idx]
+
+    mock = MagicMock()
+    mock.chat.side_effect = fake_chat
+    return mock
+
+
+def test_swarm_run_swarm_returns_3():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["resp1", "resp2", "resp3"])
+    runner = SwarmRunner(provider=provider, model="m")
+    results = runner.run_swarm("Задача", output_fn=lambda _: None)
+    assert len(results) == 3
+    assert results[0][0] == "Архитектор"
+    assert results[1][0] == "Аналитик рисков"
+    assert results[2][0] == "Декомпозитор"
+
+
+def test_swarm_synthesize_plan_adds_marker_if_missing():
+    from agent_cli.state.swarm import SwarmRunner
+    from agent_cli.state.machine import PLAN_MARKER
+    # Оркестратор отвечает без маркера → должен добавиться
+    provider = _make_swarm_mock_provider(["Синтезированный план без маркера"])
+    runner = SwarmRunner(provider=provider, model="m")
+    swarm_results = [("A", "plan A"), ("B", "plan B"), ("C", "plan C")]
+    plan = runner.synthesize_plan("Задача", swarm_results, output_fn=lambda _: None)
+    assert PLAN_MARKER in plan
+
+
+def test_swarm_synthesize_plan_keeps_existing_marker():
+    from agent_cli.state.swarm import SwarmRunner
+    from agent_cli.state.machine import PLAN_MARKER
+    provider = _make_swarm_mock_provider([f"Синтез {PLAN_MARKER}"])
+    runner = SwarmRunner(provider=provider, model="m")
+    plan = runner.synthesize_plan("Задача", [], output_fn=lambda _: None)
+    # Маркер встречается ровно один раз
+    assert plan.count(PLAN_MARKER) == 1
+
+
+def test_swarm_check_plan_approve():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["APPROVE"])
+    runner = SwarmRunner(provider=provider, model="m")
+    ok, comment = runner.check_plan("Задача", "план", output_fn=lambda _: None)
+    assert ok is True
+    assert comment == ""
+
+
+def test_swarm_check_plan_rework():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["REWORK:слишком расплывчато"])
+    runner = SwarmRunner(provider=provider, model="m")
+    ok, comment = runner.check_plan("Задача", "план", output_fn=lambda _: None)
+    assert ok is False
+    assert "расплывчато" in comment
+
+
+def test_swarm_check_execution_approve():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["APPROVE"])
+    runner = SwarmRunner(provider=provider, model="m")
+    ok, comment = runner.check_execution("Задача", "план", "результат", output_fn=lambda _: None)
+    assert ok is True
+
+
+def test_swarm_check_execution_rework():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["REWORK:не совпадает"])
+    runner = SwarmRunner(provider=provider, model="m")
+    ok, comment = runner.check_execution("Задача", "план", "результат", output_fn=lambda _: None)
+    assert ok is False
+    assert "совпадает" in comment
+
+
+def test_swarm_final_verdict_done():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["DONE"])
+    runner = SwarmRunner(provider=provider, model="m")
+    done, comment = runner.final_verdict("Задача", "план", "валидация", output_fn=lambda _: None)
+    assert done is True
+    assert comment == ""
+
+
+def test_swarm_final_verdict_retry():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["RETRY:нужна доработка"])
+    runner = SwarmRunner(provider=provider, model="m")
+    done, comment = runner.final_verdict("Задача", "план", "валидация", output_fn=lambda _: None)
+    assert done is False
+    assert "доработка" in comment
+
+
+def test_swarm_with_chat_summary():
+    from agent_cli.state.swarm import SwarmRunner
+    provider = _make_swarm_mock_provider(["APPROVE"])
+    runner = SwarmRunner(provider=provider, model="m", chat_summary="контекст чата")
+    ok, _ = runner.check_plan("Задача", "план", output_fn=lambda _: None)
+    # Проверяем что summary попадает в промпт
+    call_args = provider.chat.call_args
+    messages = call_args[0][0]
+    user_msg = next(m["content"] for m in messages if m["role"] == "user")
+    assert "контекст чата" in user_msg
+
+
+# ── core/sessions SessionStore ────────────────────────────────────────────────
+
+def test_session_store_create_and_list(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="тест", model="m")
+    assert sid
+    sessions = store.list_sessions()
+    assert len(sessions) == 1
+    assert sessions[0].name == "тест"
+    assert sessions[0].session_id == sid
+
+
+def test_session_store_last_session_id(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    assert store.last_session_id() is None
+    s1 = store.create_session(name="first")
+    s2 = store.create_session(name="second")
+    last = store.last_session_id()
+    assert last == s2  # второй создан позже
+
+
+def test_session_store_save_and_load(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    from agent_cli.core.memory import Memory
+    from agent_cli.llm.provider import SessionStats, TokenUsage
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="session1", model="gpt-4o-mini")
+
+    mem = Memory()
+    mem.add_message("user", "привет")
+    mem.add_message("assistant", "здравствуй")
+    mem.summary = "краткое резюме"
+
+    stats = SessionStats()
+    stats.add(TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15, cost_rub=0.01))
+
+    store.save_session(sid, mem, stats, model="gpt-4o-mini", profile_name="prof")
+
+    loaded_mem, loaded_stats, loaded_model = store.load_session(sid)
+    assert len(loaded_mem.short_term) == 2
+    assert loaded_mem.short_term[0]["content"] == "привет"
+    assert loaded_mem.summary == "краткое резюме"
+    assert loaded_stats.calls == 1
+    assert loaded_stats.cost_rub == pytest.approx(0.01)
+    assert loaded_model == "gpt-4o-mini"
+
+
+def test_session_store_rename(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="старое")
+    store.rename_session(sid, "новое")
+    meta = store.get_meta(sid)
+    assert meta.name == "новое"
+
+
+def test_session_store_delete(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="удалить")
+    store.delete_session(sid)
+    assert store.get_meta(sid) is None
+    assert len(store.list_sessions()) == 0
+
+
+def test_session_store_find_by_name(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="поиск")
+    found = store.find_by_name("поиск")
+    assert found is not None
+    assert found.session_id == sid
+    # По prefix id
+    found2 = store.find_by_name(sid[:4])
+    assert found2 is not None
+
+
+def test_session_store_find_by_name_not_found(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    store.create_session(name="существует")
+    assert store.find_by_name("несуществует") is None
+
+
+def test_session_store_auto_name(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    from unittest.mock import MagicMock
+    store = SessionStore(str(tmp_path / "test.db"))
+    from agent_cli.core.memory import Memory
+    from agent_cli.llm.provider import SessionStats
+    mem = Memory()
+    mem.add_message("user", "как приготовить борщ")
+    mem.add_message("user", "сколько свёклы нужно")
+    mem.add_message("user", "какой рецепт лучший")
+    sid = store.create_session()
+    store.save_session(sid, mem, SessionStats())
+
+    provider = MagicMock()
+    provider.chat.return_value = "рецепт-борща"
+    name = store.auto_name(sid, provider, "m")
+    assert name == "рецепт-борща"
+    meta = store.get_meta(sid)
+    assert meta.name == "рецепт-борща"
+
+
+def test_session_store_load_nonexistent(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    with pytest.raises(KeyError):
+        store.load_session("nonexistent")
+
+
+def test_session_store_display_name_fallback(tmp_path):
+    """SessionMeta.display_name falls back to session_id when name is empty."""
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    sid = store.create_session(name="")  # пустое имя
+    meta = store.get_meta(sid)
+    assert meta.display_name == sid  # fallback to id
+
+
+# ── tui /session commands ─────────────────────────────────────────────────────
+
+def _make_tui_with_tmp_db(tmp_path):
+    import agent_cli.config as cfg
+    import os
+    orig = cfg.SESSIONS_DB
+    cfg.SESSIONS_DB = str(tmp_path / "sessions.db")
+    with patch("agent_cli.llm.proxyapi.OpenAI"):
+        from agent_cli.tui import TUI
+        tui = TUI()
+    cfg.SESSIONS_DB = orig
+    return tui, orig
+
+
+def test_tui_session_list_empty(tmp_path):
+    import agent_cli.config as cfg
+    orig = cfg.SESSIONS_DB
+    cfg.SESSIONS_DB = str(tmp_path / "s.db")
+    try:
+        tui = _make_tui_bare()
+        tui.store = __import__("agent_cli.core.sessions", fromlist=["SessionStore"]).SessionStore(str(tmp_path / "s.db"))
+        tui.session_id = ""
+        with patch("agent_cli.tui.console") as mock_c:
+            tui._handle_session(["list"])
+            mock_c.print.assert_called()
+    finally:
+        cfg.SESSIONS_DB = orig
+
+
+def test_tui_session_new_creates(tmp_path):
+    import agent_cli.config as cfg
+    orig = cfg.SESSIONS_DB
+    cfg.SESSIONS_DB = str(tmp_path / "s.db")
+    try:
+        tui = _make_tui_bare()
+        tui.store = __import__("agent_cli.core.sessions", fromlist=["SessionStore"]).SessionStore(str(tmp_path / "s.db"))
+        tui.session_id = tui.store.create_session(name="old")
+        tui._handle_session(["new", "newsession"])
+        sessions = tui.store.list_sessions()
+        names = [s.name for s in sessions]
+        assert "newsession" in names
+    finally:
+        cfg.SESSIONS_DB = orig
+
+
+def test_tui_session_rename(tmp_path):
+    import agent_cli.config as cfg
+    orig = cfg.SESSIONS_DB
+    cfg.SESSIONS_DB = str(tmp_path / "s.db")
+    try:
+        tui = _make_tui_bare()
+        SessionStore = __import__("agent_cli.core.sessions", fromlist=["SessionStore"]).SessionStore
+        tui.store = SessionStore(str(tmp_path / "s.db"))
+        tui.session_id = tui.store.create_session(name="old")
+        tui._handle_session(["rename", "renamed"])
+        meta = tui.store.get_meta(tui.session_id)
+        assert meta.name == "renamed"
+    finally:
+        cfg.SESSIONS_DB = orig
+
+
+def test_tui_task_jump_forbidden(tmp_path):
+    import agent_cli.config as cfg
+    orig = cfg.TASKS_DIR
+    cfg.TASKS_DIR = str(tmp_path)
+    try:
+        tui = _make_tui_bare()
+        from agent_cli.state.coordinator import TaskState
+        from agent_cli.state.machine import Stage
+        task = TaskState.new("test")
+        task.stage = Stage.DONE
+        task.save()
+        tui.current_task = task
+        with patch("agent_cli.tui.console") as mock_c:
+            tui._handle_task(["jump", "planning"])
+            panel = mock_c.print.call_args[0][0]
+            content = str(panel.renderable).lower()
+            assert "запрещ" in content
+    finally:
+        cfg.TASKS_DIR = orig
+
+
+def test_tui_task_jump_allowed(tmp_path):
+    import agent_cli.config as cfg
+    orig = cfg.TASKS_DIR
+    cfg.TASKS_DIR = str(tmp_path)
+    try:
+        tui = _make_tui_bare()
+        from agent_cli.state.coordinator import TaskState
+        from agent_cli.state.machine import Stage
+        task = TaskState.new("test")
+        task.stage = Stage.PLANNING
+        task.save()
+        tui.current_task = task
+        with patch("agent_cli.tui.console") as mock_c:
+            tui._handle_task(["jump", "execution"])
+            panel = mock_c.print.call_args[0][0]
+            content = str(panel.renderable).lower()
+            assert "разрешён" in content
+    finally:
+        cfg.TASKS_DIR = orig
+
+
+def test_tui_task_jump_no_task():
+    tui = _make_tui_bare()
+    tui.current_task = None
+    with patch("agent_cli.tui.console") as mock_c:
+        tui._handle_task(["jump", "execution"])
+        mock_c.print.assert_called()
+
+
+def test_tui_task_jump_invalid_stage():
+    tui = _make_tui_bare()
+    from agent_cli.state.coordinator import TaskState
+    from agent_cli.state.machine import Stage
+    tui.current_task = MagicMock()
+    tui.current_task.stage = Stage.PLANNING
+    with patch("agent_cli.tui.console") as mock_c:
+        tui._handle_task(["jump", "nonexistent"])
+        mock_c.print.assert_called()
+
+
+def test_tui_task_jump_no_stage_arg():
+    tui = _make_tui_bare()
+    tui.current_task = MagicMock()
+    with patch("agent_cli.tui.console") as mock_c:
+        tui._handle_task(["jump"])
+        mock_c.print.assert_called()
+
+
+# ── coordinator retry edge cases ───────────────────────────────────────────────
+
+def test_coordinator_planning_retry_on_rework():
+    """_run_planning retries when check_plan returns REWORK once, then APPROVE."""
+    from agent_cli.llm.provider import LLMProvider
+    from agent_cli.state.coordinator import TaskCoordinator, TaskState
+    from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
+    from unittest.mock import patch, MagicMock
+    import tempfile, agent_cli.config as cfg
+
+    mock_provider = MagicMock(spec=LLMProvider)
+    call_idx = {"i": 0}
+    exec_val = [
+        f"Выполнено <<ВЫПОЛНЕНО>>",
+        f"ОК. {VALIDATION_OK_MARKER}",
+    ]
+    def fake_chat(messages, model, **kwargs):
+        idx = min(call_idx["i"], len(exec_val) - 1)
+        call_idx["i"] += 1
+        return exec_val[idx]
+    mock_provider.chat.side_effect = fake_chat
+
+    with patch("agent_cli.state.coordinator.SwarmRunner") as MockSwarm:
+        inst = MockSwarm.return_value
+        inst.run_swarm.return_value = [("A", "p")]
+        inst.synthesize_plan.return_value = "Шаг 1. <<ПЛАН ГОТОВ>>"
+        # First check_plan returns REWORK, second returns APPROVE
+        inst.check_plan.side_effect = [(False, "доработай"), (True, "")]
+        inst.check_execution.return_value = (True, "")
+        inst.final_verdict.return_value = (True, "")
+
+        task = TaskState("t-retry", "задача")
+        coord = TaskCoordinator(provider=mock_provider, interactive=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = cfg.TASKS_DIR
+            cfg.TASKS_DIR = tmp
+            try:
+                result = coord.run(task, output_fn=lambda _: None)
+            finally:
+                cfg.TASKS_DIR = orig
+
+    # Despite one rework, should complete
+    assert result.stage == Stage.DONE
+
+
+def test_coordinator_execution_retry_on_rework():
+    """Execution retries when check_execution returns REWORK once."""
+    from agent_cli.llm.provider import LLMProvider
+    from agent_cli.state.coordinator import TaskCoordinator, TaskState
+    from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
+    from unittest.mock import patch, MagicMock
+    import tempfile, agent_cli.config as cfg
+
+    mock_provider = MagicMock(spec=LLMProvider)
+    call_idx = {"i": 0}
+    responses = [
+        "Первая попытка выполнения <<ВЫПОЛНЕНО>>",
+        "Исправленное выполнение <<ВЫПОЛНЕНО>>",
+        f"Всё ок. {VALIDATION_OK_MARKER}",
+    ]
+    def fake_chat(messages, model, **kwargs):
+        idx = min(call_idx["i"], len(responses) - 1)
+        call_idx["i"] += 1
+        return responses[idx]
+    mock_provider.chat.side_effect = fake_chat
+
+    with patch("agent_cli.state.coordinator.SwarmRunner") as MockSwarm:
+        inst = MockSwarm.return_value
+        inst.run_swarm.return_value = [("A", "p")]
+        inst.synthesize_plan.return_value = "Шаг 1. <<ПЛАН ГОТОВ>>"
+        inst.check_plan.return_value = (True, "")
+        # First check_execution REWORK, second APPROVE
+        inst.check_execution.side_effect = [(False, "доделай"), (True, "")]
+        inst.final_verdict.return_value = (True, "")
+
+        task = TaskState("t-exec-retry", "задача")
+        coord = TaskCoordinator(provider=mock_provider, interactive=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = cfg.TASKS_DIR
+            cfg.TASKS_DIR = tmp
+            try:
+                result = coord.run(task, output_fn=lambda _: None)
+            finally:
+                cfg.TASKS_DIR = orig
+
+    assert result.stage == Stage.DONE
+
+
+# ── sessions auto_name edge cases ─────────────────────────────────────────────
+
+def test_session_store_auto_name_no_messages(tmp_path):
+    """auto_name returns session_id if no messages exist."""
+    from agent_cli.core.sessions import SessionStore
+    from unittest.mock import MagicMock
+    store = SessionStore(str(tmp_path / "s.db"))
+    sid = store.create_session()
+    provider = MagicMock()
+    result = store.auto_name(sid, provider, "model")
+    # No messages → returns session_id unchanged, no provider call
+    assert result == sid
+    provider.chat.assert_not_called()
+
+
+def test_session_store_auto_name_provider_error(tmp_path):
+    """auto_name falls back to session_id on provider error."""
+    from agent_cli.core.sessions import SessionStore
+    from agent_cli.core.memory import Memory
+    from unittest.mock import MagicMock
+    store = SessionStore(str(tmp_path / "s.db"))
+    sid = store.create_session()
+    # Add some messages via save_session
+    mem = Memory()
+    mem.add_message("user", "привет")
+    mem.add_message("assistant", "ок")
+    from agent_cli.llm.provider import SessionStats
+    store.save_session(sid, mem, SessionStats(), "", "model")
+    provider = MagicMock()
+    provider.chat.side_effect = Exception("network error")
+    result = store.auto_name(sid, provider, "model")
+    assert result == sid
+
+
+def test_coordinator_planning_max_retries_exhausted():
+    """All planning attempts rejected → fallback to last plan."""
+    from agent_cli.llm.provider import LLMProvider
+    from agent_cli.state.coordinator import TaskCoordinator, TaskState
+    from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
+    from unittest.mock import patch, MagicMock
+    import tempfile, agent_cli.config as cfg
+
+    mock_provider = MagicMock(spec=LLMProvider)
+    call_idx = {"i": 0}
+    exec_val = [f"Готово <<ВЫПОЛНЕНО>>", f"Всё ок. {VALIDATION_OK_MARKER}"]
+    def fake_chat(messages, model, **kwargs):
+        idx = min(call_idx["i"], len(exec_val) - 1)
+        call_idx["i"] += 1
+        return exec_val[idx]
+    mock_provider.chat.side_effect = fake_chat
+
+    with patch("agent_cli.state.coordinator.SwarmRunner") as MockSwarm:
+        inst = MockSwarm.return_value
+        inst.run_swarm.return_value = [("A", "p")]
+        inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+        # Always REWORK — exhausts retries
+        inst.check_plan.return_value = (False, "неполный план")
+        inst.check_execution.return_value = (True, "")
+        inst.final_verdict.return_value = (True, "")
+
+        task = TaskState("t-plan-max", "задача")
+        coord = TaskCoordinator(provider=mock_provider, interactive=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = cfg.TASKS_DIR
+            cfg.TASKS_DIR = tmp
+            try:
+                result = coord.run(task, output_fn=lambda _: None)
+            finally:
+                cfg.TASKS_DIR = orig
+
+    # Falls through with last plan anyway → DONE
+    assert result.stage == Stage.DONE
+
+
+def test_coordinator_execution_max_retries_stops():
+    """check_execution always REWORK → hits hard stop at MAX_RETRIES."""
+    from agent_cli.llm.provider import LLMProvider
+    from agent_cli.state.coordinator import TaskCoordinator, TaskState
+    from agent_cli.state.machine import Stage
+    from unittest.mock import patch, MagicMock
+    import tempfile, agent_cli.config as cfg
+
+    mock_provider = MagicMock(spec=LLMProvider)
+    mock_provider.chat.return_value = "Результат <<ВЫПОЛНЕНО>>"
+
+    with patch("agent_cli.state.coordinator.SwarmRunner") as MockSwarm:
+        inst = MockSwarm.return_value
+        inst.run_swarm.return_value = [("A", "p")]
+        inst.synthesize_plan.return_value = "Plan. <<ПЛАН ГОТОВ>>"
+        inst.check_plan.return_value = (True, "")
+        # Always reject execution
+        inst.check_execution.return_value = (False, "всегда плохо")
+        inst.final_verdict.return_value = (True, "")
+
+        task = TaskState("t-exec-max", "задача")
+        coord = TaskCoordinator(provider=mock_provider, interactive=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = cfg.TASKS_DIR
+            cfg.TASKS_DIR = tmp
+            try:
+                result = coord.run(task, output_fn=lambda _: None)
+            finally:
+                cfg.TASKS_DIR = orig
+
+    # Hard stop — task should NOT be DONE
+    assert result.stage != Stage.DONE

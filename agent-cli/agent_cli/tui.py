@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Callable
 
 from prompt_toolkit import PromptSession
@@ -10,10 +11,13 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
+import agent_cli.config as cfg
 from agent_cli.config import DEFAULT_MODEL
 from agent_cli.core.memory import MAX_SHORT_TERM
+from agent_cli.core.sessions import SessionStore
 from agent_cli.llm.provider import TokenUsage
 from agent_cli.core.agent import Agent
 from agent_cli.invariants.checker import check_llm
@@ -21,19 +25,23 @@ from agent_cli.invariants.store import add_invariant, load_invariants
 from agent_cli.llm.proxyapi import ProxyAPIProvider
 from agent_cli.profile.profile import UserProfile
 from agent_cli.state.coordinator import TaskCoordinator, TaskState
-from agent_cli.state.machine import Stage
+from agent_cli.state.machine import Stage, TRANSITIONS, can_transition
 
 console = Console()
 
 _COMMANDS = [
     "/help", "/model", "/clear", "/exit",
     "/profile", "/profile show", "/profile list", "/profile switch", "/profile edit", "/profile create",
-    "/task", "/task start", "/task resume",
+    "/task", "/task start", "/task resume", "/task jump",
     "/state",
     "/invariants", "/invariants list", "/invariants add",
+    "/session", "/session new", "/session list", "/session switch", "/session rename", "/session delete",
 ]
 _COMPLETER = WordCompleter(_COMMANDS, sentence=True)
 _STYLE = Style.from_dict({"bottom-toolbar": "bg:#1e1e1e #666666"})
+
+# Контекстное окно модели gpt-4o-mini в токенах
+_CTX_WINDOW_K = 128
 
 
 class TUI:
@@ -44,7 +52,11 @@ class TUI:
         self.invariants: list[str] = []
         self.agent: Agent = self._make_agent()
         self.current_task: TaskState | None = None
-        self.session: PromptSession | None = None
+        self.prompt_session: PromptSession | None = None
+
+        # Менеджер сессий
+        self.store = SessionStore(cfg.SESSIONS_DB)
+        self.session_id: str = ""
 
     def _make_agent(self) -> Agent:
         profile_content = self.current_profile.to_prompt_text() if self.current_profile else ""
@@ -55,26 +67,161 @@ class TUI:
             invariants=self.invariants,
         )
 
+    def _session_name(self) -> str:
+        meta = self.store.get_meta(self.session_id) if self.session_id else None
+        return meta.display_name if meta else "—"
+
+    def _ctx_tok_estimate(self) -> int:
+        """Грубая оценка токенов в текущем контексте (символы / 4)."""
+        return sum(len(m["content"]) for m in self.agent.memory.short_term) // 4
+
     def _toolbar(self) -> HTML:
         profile = self.current_profile.name if self.current_profile else "no profile"
         stage = self.current_task.stage.value if self.current_task else "—"
         stats = self.agent.session_stats
         cost_str = f"{stats.cost_rub:.4f}₽" if stats.calls else "0₽"
-        tok_str = f"{stats.total_tokens}tok" if stats.calls else "0tok"
-        ctx = f"{self.agent.memory.ctx_used}/{MAX_SHORT_TERM}"
+        ctx_msgs = self.agent.memory.ctx_used
+        ctx_tok = self._ctx_tok_estimate()
+        ctx_k = f"{ctx_tok / 1000:.1f}K"
         return HTML(
+            f"<b>session:</b> {self._session_name()}  "
+            f"<b>ctx:</b> {ctx_msgs}msg ~{ctx_k}/{_CTX_WINDOW_K}K  "
             f"<b>model:</b> {self.model}  "
             f"<b>profile:</b> {profile}  "
             f"<b>stage:</b> {stage}  "
-            f"<b>ctx:</b> {ctx}  "
-            f"<b>session:</b> {tok_str} / {cost_str}"
+            f"<b>₽:</b> {cost_str}"
         )
 
     def _prompt(self, text: str) -> str:
-        """Use session prompt if available, else fallback to input()."""
-        if self.session:
-            return self.session.prompt(text)
+        """Использует PromptSession если доступен, иначе input()."""
+        if self.prompt_session:
+            return self.prompt_session.prompt(text)
         return input(text)
+
+    # ── session management ────────────────────────────────────────────────────
+
+    def _save_current_session(self) -> None:
+        """Сохраняет текущее состояние агента в БД."""
+        if not self.session_id:
+            return
+        profile_name = self.current_profile.name if self.current_profile else ""
+        self.store.save_session(
+            self.session_id,
+            self.agent.memory,
+            self.agent.session_stats,
+            model=self.model,
+            profile_name=profile_name,
+        )
+
+    def _load_session(self, session_id: str) -> None:
+        """Загружает сессию в агент."""
+        memory, stats, model = self.store.load_session(session_id)
+        self.session_id = session_id
+        self.model = model
+        self.agent = self._make_agent()
+        self.agent.memory = memory
+        self.agent.session_stats = stats
+        # Загружаем профиль если был
+        meta = self.store.get_meta(session_id)
+        if meta and meta.profile_name:
+            try:
+                self.current_profile = UserProfile.load(meta.profile_name)
+            except FileNotFoundError:
+                pass
+
+    def _handle_session(self, args: list[str]) -> None:
+        sub = args[0] if args else "list"
+
+        if sub == "list":
+            sessions = self.store.list_sessions()
+            if not sessions:
+                console.print("[yellow]Сессий нет. /session new — создать.[/]")
+                return
+            table = Table(title="Сессии", show_lines=True)
+            table.add_column("Имя", style="cyan")
+            table.add_column("ID", style="dim")
+            table.add_column("Сообщ.", justify="right")
+            table.add_column("~Токены", justify="right")
+            table.add_column("₽", justify="right")
+            table.add_column("Модель")
+            table.add_column("Обновлено")
+            for s in sessions:
+                active = "▶ " if s.session_id == self.session_id else "  "
+                updated = time.strftime("%d.%m %H:%M", time.localtime(s.updated_at))
+                # грубая оценка токенов из стоимости (нет точных данных без загрузки)
+                table.add_row(
+                    active + s.display_name,
+                    s.session_id,
+                    str(s.msg_count),
+                    "—",
+                    f"{s.cost_rub:.4f}",
+                    s.model,
+                    updated,
+                )
+            console.print(table)
+
+        elif sub == "new":
+            # Сохраняем текущую сессию
+            self._save_current_session()
+            # Авто-имя после 2+ сообщений
+            if self.session_id and len(self.agent.memory.short_term) >= 2:
+                self.store.auto_name(self.session_id, self.provider, self.model)
+            # Создаём новую
+            name = " ".join(args[1:]).strip()
+            profile_name = self.current_profile.name if self.current_profile else ""
+            new_id = self.store.create_session(name=name, model=self.model, profile_name=profile_name)
+            self.session_id = new_id
+            self.agent = self._make_agent()  # чистый агент
+            console.print(f"[green]✓ Новая сессия: {new_id}" + (f" ({name})" if name else "") + "[/]")
+
+        elif sub == "switch":
+            target = " ".join(args[1:]).strip()
+            if not target:
+                console.print("[red]Укажи имя или ID сессии[/]")
+                return
+            meta = self.store.find_by_name(target)
+            if not meta:
+                console.print(f"[red]Сессия '{target}' не найдена. /session list[/]")
+                return
+            self._save_current_session()
+            if self.session_id and len(self.agent.memory.short_term) >= 2:
+                self.store.auto_name(self.session_id, self.provider, self.model)
+            self._load_session(meta.session_id)
+            console.print(f"[green]✓ Переключено на: {meta.display_name} ({meta.session_id})[/]")
+
+        elif sub == "rename":
+            new_name = " ".join(args[1:]).strip()
+            if not new_name:
+                new_name = self._prompt("Новое имя: ").strip()
+            if not new_name or not self.session_id:
+                return
+            self.store.rename_session(self.session_id, new_name)
+            console.print(f"[green]✓ Сессия переименована: {new_name}[/]")
+
+        elif sub == "delete":
+            target = " ".join(args[1:]).strip()
+            if not target:
+                console.print("[red]Укажи имя или ID сессии[/]")
+                return
+            meta = self.store.find_by_name(target)
+            if not meta:
+                console.print(f"[red]Сессия '{target}' не найдена[/]")
+                return
+            confirm = self._prompt(f"Удалить сессию '{meta.display_name}'? [y/n]: ").strip().lower()
+            if confirm not in ("y", "yes", "д", "да"):
+                console.print("[dim]Отменено.[/dim]")
+                return
+            self.store.delete_session(meta.session_id)
+            if meta.session_id == self.session_id:
+                # Удалили текущую — создаём новую
+                self.session_id = self.store.create_session(model=self.model)
+                self.agent = self._make_agent()
+                console.print("[yellow]Текущая сессия удалена, создана новая.[/]")
+            else:
+                console.print(f"[green]✓ Сессия удалена: {meta.display_name}[/]")
+
+        else:
+            console.print("Использование: /session new|list|switch|rename|delete")
 
     # ── profile handlers ──────────────────────────────────────────────────────
 
@@ -153,7 +300,6 @@ class TUI:
             answer = self._prompt("  ▶ ").strip()
             if not answer:
                 continue
-            # Auto-route: ask LLM which layer, fallback to hint
             detected = route_fact(answer, self.provider, self.model)
             target = detected if detected != "persona" or hint_layer == "persona" else hint_layer
             layers[target].append(answer)
@@ -181,6 +327,7 @@ class TUI:
             invariants=self.invariants,
             model=self.model,
             interactive=interactive,
+            chat_summary=self.agent.memory.summary,
         )
 
     def _confirm_fn(self, msg: str) -> bool:
@@ -224,8 +371,49 @@ class TUI:
                 confirm_fn=self._confirm_fn,
             )
 
+        elif sub == "jump":
+            # Демо: попытка принудительно перепрыгнуть стадию
+            if not self.current_task:
+                console.print("[yellow]Нет активной задачи. /task start [запрос][/]")
+                return
+            target_str = args[1] if len(args) > 1 else ""
+            if not target_str:
+                console.print("[red]Укажи стадию: planning | execution | validation | done[/]")
+                return
+            try:
+                target = Stage(target_str.lower())
+            except ValueError:
+                console.print(f"[red]Неизвестная стадия: '{target_str}'. "
+                              f"Доступны: planning, execution, validation, done[/]")
+                return
+            current = self.current_task.stage
+            if can_transition(current, target):
+                console.print(
+                    Panel(
+                        f"[green]Переход разрешён:[/green] {current.value} → {target.value}\n"
+                        "[dim](FSM-переход допустим, но выполняется через /task resume)[/dim]",
+                        title="FSM: переход",
+                        border_style="green",
+                    )
+                )
+            else:
+                allowed = [s.value for s in TRANSITIONS.get(current, set())]
+                console.print(
+                    Panel(
+                        f"[bold red]Переход ЗАПРЕЩЁН:[/bold red] "
+                        f"{current.value} → {target.value}\n\n"
+                        f"Текущая стадия: [yellow]{current.value}[/yellow]\n"
+                        f"Допустимые переходы: [green]{allowed or 'нет (задача завершена)'}[/green]\n\n"
+                        "[dim]FSM не позволяет перепрыгивать этапы.\n"
+                        "Нельзя делать реализацию до утверждённого плана,\n"
+                        "нельзя финализировать без валидации.[/dim]",
+                        title="[red]FSM: недопустимый переход[/red]",
+                        border_style="red",
+                    )
+                )
+
         else:
-            console.print("Использование: /task start [запрос] | /task resume")
+            console.print("Использование: /task start [запрос] | /task resume | /task jump <stage>")
 
     # ── invariants handlers ───────────────────────────────────────────────────
 
@@ -248,7 +436,7 @@ class TUI:
             add_invariant(text)
             self.invariants.append(text)
             self.agent = self._make_agent()
-            console.print(f"[green]✓ Инвариант добавлен[/]")
+            console.print("[green]✓ Инвариант добавлен[/]")
 
         else:
             console.print("Использование: /invariants list | /invariants add <текст>")
@@ -294,6 +482,8 @@ class TUI:
                 return
 
         console.print(self._stats_line(usage))
+        # Автосохранение сессии после каждого ответа
+        self._save_current_session()
 
     # ── help ──────────────────────────────────────────────────────────────────
 
@@ -301,17 +491,28 @@ class TUI:
         console.print(
             Panel(
                 "[bold]Команды:[/bold]\n"
-                "  /help                               — эта справка\n"
-                "  /model [name]                       — показать / сменить модель\n"
-                "  /profile show|list|switch|edit      — управление профилями (День 12)\n"
-                "  /profile create [name]              — создать профиль через онбординг\n"
-                "  /task start [запрос]                — запустить FSM-пайплайн (День 13)\n"
-                "  /task resume                        — продолжить паузу\n"
-                "  /state                              — текущее состояние задачи\n"
-                "  /invariants list|add [текст]        — инварианты (День 14)\n"
-                "  /clear                              — очистить историю диалога\n"
-                "  /exit                               — выход\n\n"
-                "[dim]Tab — автодополнение команд[/dim]",
+                "  /help                                  — эта справка\n"
+                "  /model [name]                          — показать / сменить модель\n"
+                "\n[bold]Сессии (День 15):[/bold]\n"
+                "  /session new [name]                    — новая сессия\n"
+                "  /session list                          — список всех сессий\n"
+                "  /session switch <name|id>              — переключить сессию\n"
+                "  /session rename <name>                 — переименовать текущую\n"
+                "  /session delete <name|id>              — удалить сессию\n"
+                "\n[bold]Профили (День 12):[/bold]\n"
+                "  /profile show|list|switch|edit         — управление профилями\n"
+                "  /profile create [name]                 — создать профиль\n"
+                "\n[bold]Задачи — FSM (Дни 13–15):[/bold]\n"
+                "  /task start [запрос]                   — запустить пайплайн (рой агентов)\n"
+                "  /task resume                           — продолжить после паузы\n"
+                "  /task jump <stage>                     — проверка FSM-перехода (демо)\n"
+                "  /state                                 — текущее состояние задачи\n"
+                "\n[bold]Инварианты (День 14):[/bold]\n"
+                "  /invariants list|add [текст]           — управление инвариантами\n"
+                "\n"
+                "  /clear                                 — очистить историю диалога\n"
+                "  /exit                                  — выход\n\n"
+                "[dim]Tab — автодополнение  ·  Toolbar — сессия / ctx / модель / ₽[/dim]",
                 title="Agent CLI — Справка",
             )
         )
@@ -320,17 +521,30 @@ class TUI:
 
     def run(self) -> None:
         self.invariants = load_invariants()
-        self.agent = self._make_agent()
+
+        # Инициализация / восстановление сессии
+        last_id = self.store.last_session_id()
+        if last_id:
+            try:
+                self._load_session(last_id)
+                console.print(f"[dim]Восстановлена сессия: {self._session_name()} ({last_id})[/dim]")
+            except Exception:
+                self.session_id = self.store.create_session(model=self.model)
+        else:
+            self.session_id = self.store.create_session(model=self.model)
+
+        self.agent = self._make_agent() if not self.session_id else self.agent
 
         console.print(
             Panel(
                 "[bold cyan]Agent CLI[/bold cyan]  ·  AI Advent Challenge #8\n"
-                "[dim]/help — команды  ·  Tab — автодополнение[/dim]",
+                "[dim]/help — команды  ·  Tab — автодополнение  ·  "
+                "/session list — сессии[/dim]",
                 border_style="cyan",
             )
         )
 
-        self.session = PromptSession(
+        self.prompt_session = PromptSession(
             completer=_COMPLETER,
             style=_STYLE,
             bottom_toolbar=self._toolbar,
@@ -338,9 +552,10 @@ class TUI:
 
         while True:
             try:
-                user_input = self.session.prompt("▶ ").strip()
+                user_input = self.prompt_session.prompt("▶ ").strip()
             except (EOFError, KeyboardInterrupt):
-                console.print("\n[dim]Выход.[/dim]")
+                self._save_current_session()
+                console.print("\n[dim]Выход. Сессия сохранена.[/dim]")
                 break
 
             if not user_input:
@@ -355,14 +570,20 @@ class TUI:
             args = parts[1:]
 
             if cmd in ("exit", "quit"):
-                console.print("[dim]Выход.[/dim]")
+                self._save_current_session()
+                console.print("[dim]Выход. Сессия сохранена.[/dim]")
                 break
             elif cmd == "help":
                 self._show_help()
             elif cmd == "clear":
                 self.agent = self._make_agent()
+                # Пересоздаём сессию (старая очищена)
+                self.session_id = self.store.create_session(
+                    model=self.model,
+                    profile_name=self.current_profile.name if self.current_profile else "",
+                )
                 console.clear()
-                console.print("[dim]История очищена.[/dim]")
+                console.print("[dim]История очищена. Новая сессия создана.[/dim]")
             elif cmd == "model":
                 if args:
                     self.model = args[0]
@@ -370,6 +591,8 @@ class TUI:
                     console.print(f"[green]✓ Модель: {self.model}[/]")
                 else:
                     console.print(f"Модель: {self.model}")
+            elif cmd == "session":
+                self._handle_session(args)
             elif cmd == "profile":
                 self._handle_profile(args)
             elif cmd == "task":

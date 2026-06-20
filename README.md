@@ -39,6 +39,7 @@
 | 03 | 12 | Персонализация: слоистый профиль (стиль/правила/стек), 2 профиля → разные ответы, авто-роутинг фактов, CLI/TUI (Python) | done | [agent-cli](agent-cli/) | — |
 | 03 | 13 | Task State Machine: 4 стадии-агента (planning→execution→validation→done), детерминированные переходы, пауза / resume | done | [agent-cli](agent-cli/) | — |
 | 03 | 14 | Инварианты: хранение отдельно от диалога, инжект в промпт, LLM-проверка, отказ при нарушении | done | [agent-cli](agent-cli/) | — |
+| 04 | 15 | Контролируемые переходы: рой 3 агентов на PLANNING + Оркестратор на каждой стадии, SQLite-сессии с персистом, `/session` switch/rename/delete, `/task jump` FSM-демо | done | [agent-cli](agent-cli/) | — |
 
 ## Приложение AgentChat (неделя 2)
 

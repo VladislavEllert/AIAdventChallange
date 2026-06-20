@@ -13,6 +13,7 @@ from agent_cli.state.machine import (
     VALIDATION_OK_MARKER,
     VALIDATION_FAIL_MARKER,
 )
+from agent_cli.state.swarm import SwarmRunner
 
 MAX_RETRIES = 3
 
@@ -82,12 +83,19 @@ class TaskCoordinator:
         invariants: list[str] | None = None,
         model: str = cfg.DEFAULT_MODEL,
         interactive: bool = True,
+        chat_summary: str = "",
     ) -> None:
         self.provider = provider
         self.profile_content = profile_content
         self.invariants = invariants or []
         self.model = model
         self.interactive = interactive
+        self.swarm = SwarmRunner(
+            provider=provider,
+            model=model,
+            profile_content=profile_content,
+            chat_summary=chat_summary,
+        )
 
     def _agent(self, stage: Stage) -> Agent:
         return Agent(
@@ -97,6 +105,31 @@ class TaskCoordinator:
             profile_content=self.profile_content,
             invariants=self.invariants,
         )
+
+    def _run_planning(
+        self,
+        task: "TaskState",
+        output_fn: Callable[[str], None],
+        retry_count: int,
+    ) -> tuple[str, int]:
+        """
+        Рой → синтез → проверка плана.
+        Возвращает (plan, retry_count).
+        Если оркестратор отклоняет план — повторяем рой (до MAX_RETRIES).
+        """
+        for attempt in range(MAX_RETRIES):
+            swarm_results = self.swarm.run_swarm(task.request, output_fn)
+            plan = self.swarm.synthesize_plan(task.request, swarm_results, output_fn)
+            ok, comment = self.swarm.check_plan(task.request, plan, output_fn)
+            if ok:
+                return plan, retry_count
+            retry_count += 1
+            output_fn(f"\n[Оркестратор] План требует доработки: {comment}")
+            output_fn(f"[!] Повтор планирования ({attempt + 1}/{MAX_RETRIES})...")
+            if retry_count >= MAX_RETRIES:
+                output_fn(f"[!] Лимит попыток планирования достигнут. Берём последний план.")
+                return plan, retry_count
+        return plan, retry_count  # pragma: no cover
 
     def run(
         self,
@@ -108,50 +141,82 @@ class TaskCoordinator:
 
         while task.stage != Stage.DONE:
             stage = task.stage
-            agent = self._agent(stage)
 
+            # ── PLANNING: рой + оркестратор ──────────────────────────────────
             if stage == Stage.PLANNING:
-                prompt = f"Задача: {task.request}"
+                plan, retry_count = self._run_planning(task, output_fn, retry_count)
+                task.plan = plan
+                next_stage = Stage.EXECUTION
+                task.stage = next_stage
+                task.save()
+
+            # ── EXECUTION: агент + проверка оркестратора ──────────────────────
             elif stage == Stage.EXECUTION:
                 feedback = ""
                 if task.validation_result and VALIDATION_FAIL_MARKER in task.validation_result:
                     feedback = f"\n\nФидбек от валидации:\n{task.validation_result}"
                 prompt = f"Задача: {task.request}\n\nПлан:\n{task.plan}{feedback}"
+
+                output_fn(f"\n── [EXECUTION] ──")
+                agent = self._agent(Stage.EXECUTION)
+                response = agent.respond(prompt)
+                output_fn(response)
+                task.execution_result = response
+
+                # Оркестратор проверяет выполнение
+                ok, comment = self.swarm.check_execution(
+                    task.request, task.plan, response, output_fn
+                )
+                if not ok:
+                    retry_count += 1
+                    output_fn(f"\n[Оркестратор] Выполнение не соответствует плану: {comment}")
+                    if retry_count > MAX_RETRIES:
+                        output_fn(f"[!] Достигнут лимит попыток ({MAX_RETRIES}). Задача остановлена.")
+                        task.save()
+                        return task
+                    output_fn(f"[!] Повтор выполнения ({retry_count}/{MAX_RETRIES})...")
+                    task.save()
+                    continue  # retry execution
+
+                next_stage = Stage.VALIDATION
+                task.stage = next_stage
+                task.save()
+
+            # ── VALIDATION: агент + финальный вердикт ─────────────────────────
             else:  # VALIDATION
                 prompt = (
                     f"Задача: {task.request}\n\n"
                     f"План:\n{task.plan}\n\n"
                     f"Результат выполнения:\n{task.execution_result}"
                 )
-
-            output_fn(f"\n── [{stage.value.upper()}] ──")
-            response = agent.respond(prompt)
-            output_fn(response)
-
-            if stage == Stage.PLANNING:
-                task.plan = response
-                next_stage = Stage.EXECUTION
-            elif stage == Stage.EXECUTION:
-                task.execution_result = response
-                next_stage = Stage.VALIDATION
-            else:  # VALIDATION
+                output_fn(f"\n── [VALIDATION] ──")
+                agent = self._agent(Stage.VALIDATION)
+                response = agent.respond(prompt)
+                output_fn(response)
                 task.validation_result = response
-                if VALIDATION_OK_MARKER in response:
+
+                # Оркестратор выносит финальный вердикт
+                done, comment = self.swarm.final_verdict(
+                    task.request, task.plan, response, output_fn
+                )
+                if done:
                     next_stage = Stage.DONE
                 else:
                     retry_count += 1
+                    output_fn(f"\n[Оркестратор] Задача требует доработки: {comment}")
                     if retry_count > MAX_RETRIES:
-                        output_fn(f"\n[!] Достигнут лимит попыток ({MAX_RETRIES}). Задача остановлена.")
-                        task.stage = Stage.EXECUTION  # leave resumable
+                        output_fn(f"[!] Достигнут лимит попыток ({MAX_RETRIES}). Задача остановлена.")
+                        task.stage = Stage.EXECUTION
                         task.save()
                         return task
                     next_stage = Stage.EXECUTION
 
-            task.stage = next_stage
-            task.save()
+                task.stage = next_stage
+                task.save()
 
-            if self.interactive and next_stage != Stage.DONE and confirm_fn:
-                if not confirm_fn(f"\nПродолжить → [{next_stage.value}]?"):
+            # ── пауза между стадиями ──────────────────────────────────────────
+            if task.stage != Stage.DONE and self.interactive and confirm_fn:
+                if not confirm_fn(f"\nПродолжить → [{task.stage.value}]?"):
                     output_fn("Задача приостановлена. /task resume — продолжить.")
                     return task
 

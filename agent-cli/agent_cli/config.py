@@ -13,6 +13,7 @@ DATA_DIR = str(_ROOT / "data")
 PROFILES_DIR = str(_ROOT / "data" / "profiles")
 TASKS_DIR = str(_ROOT / "data" / "tasks")
 INVARIANTS_DIR = str(_ROOT / "data" / "invariants")
+SESSIONS_DB = str(_ROOT / "data" / "sessions.db")
 
 # Pricing per 1K tokens in rubles (ProxyAPI, approximate — verify at proxyapi.ru/prices)
 _MODEL_PRICING: dict[str, dict[str, float]] = {

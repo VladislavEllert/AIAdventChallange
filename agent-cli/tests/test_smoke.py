@@ -281,39 +281,49 @@ def test_agent_memory_not_polluted_on_invariant_pop():
 # ── coordinator mock ───────────────────────────────────────────────────────────
 
 def test_coordinator_full_run_mock():
-    """Happy path: planning→execution→validation OK→done."""
+    """Happy path: planning→execution→validation OK→done (SwarmRunner mocked)."""
     from agent_cli.llm.provider import LLMProvider
     from agent_cli.state.coordinator import TaskCoordinator, TaskState
     from agent_cli.state.machine import Stage, VALIDATION_OK_MARKER
+    from unittest.mock import patch, MagicMock
 
-    responses = [
-        "Шаг 1: сделать X. <<ПЛАН ГОТОВ>>",
-        "Выполнено: X сделано. <<ВЫПОЛНЕНО>>",
-        f"Всё соответствует плану. {VALIDATION_OK_MARKER}",
-    ]
-    call_count = 0
+    mock_provider = MagicMock(spec=LLMProvider)
 
-    def fake_chat(messages, model, **kwargs):
-        nonlocal call_count
-        r = responses[min(call_count, len(responses) - 1)]
-        call_count += 1
-        return r
+    # Мокируем SwarmRunner: рой и оркестратор не делают реальных вызовов
+    with patch("agent_cli.state.coordinator.SwarmRunner") as MockSwarm:
+        swarm_instance = MockSwarm.return_value
+        swarm_instance.run_swarm.return_value = [("Архитектор", "план")]
+        swarm_instance.synthesize_plan.return_value = "Шаг 1: сделать X. <<ПЛАН ГОТОВ>>"
+        swarm_instance.check_plan.return_value = (True, "")
+        swarm_instance.check_execution.return_value = (True, "")
+        swarm_instance.final_verdict.return_value = (True, "")
 
-    mock = MagicMock(spec=LLMProvider)
-    mock.chat.side_effect = fake_chat
+        # Агенты execution/validation через provider.chat
+        call_idx = {"i": 0}
+        exec_val_responses = [
+            "Выполнено: X сделано. <<ВЫПОЛНЕНО>>",
+            f"Всё соответствует плану. {VALIDATION_OK_MARKER}",
+        ]
 
-    task = TaskState("t001", "Сделай X")
-    coord = TaskCoordinator(provider=mock, interactive=False)
+        def fake_chat(messages, model, **kwargs):
+            idx = min(call_idx["i"], len(exec_val_responses) - 1)
+            call_idx["i"] += 1
+            return exec_val_responses[idx]
 
-    import agent_cli.config as cfg
-    import tempfile, os
-    with tempfile.TemporaryDirectory() as tmp:
-        orig = cfg.TASKS_DIR
-        cfg.TASKS_DIR = tmp
-        try:
-            result = coord.run(task, output_fn=lambda _: None)
-        finally:
-            cfg.TASKS_DIR = orig
+        mock_provider.chat.side_effect = fake_chat
+
+        task = TaskState("t001", "Сделай X")
+        coord = TaskCoordinator(provider=mock_provider, interactive=False)
+
+        import agent_cli.config as cfg
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            orig = cfg.TASKS_DIR
+            cfg.TASKS_DIR = tmp
+            try:
+                result = coord.run(task, output_fn=lambda _: None)
+            finally:
+                cfg.TASKS_DIR = orig
 
     assert result.stage == Stage.DONE
     assert result.plan != ""

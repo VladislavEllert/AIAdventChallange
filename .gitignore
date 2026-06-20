@@ -9,6 +9,9 @@ node_modules/
 .vscode/
 .claude/settings.local.json
 
+# SQLite sessions (локальные данные)
+agent-cli/data/sessions.db
+
 # Xcode / iOS
 build/
 DerivedData/
