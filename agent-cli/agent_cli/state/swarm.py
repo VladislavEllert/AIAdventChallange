@@ -73,13 +73,27 @@ class SwarmRunner:
     def run_swarm(self, task_request: str, output_fn: OutputFn) -> list[tuple[str, str]]:
         """
         Запускает 3 агента роя последовательно.
+        Каждый следующий агент видит ответы предыдущих — дополняет, не повторяет.
         Возвращает [(name, response), ...].
         """
         results: list[tuple[str, str]] = []
         for name, persona in PLANNING_SWARM:
             output_fn(f"\n── [PLANNING / {name.upper()}] ──")
             agent = self._make_agent(persona)
-            response = agent.respond(f"Задача: {task_request}")
+
+            if results:
+                prev_block = "\n\n".join(
+                    f"[{n}]:\n{r}" for n, r in results
+                )
+                prompt = (
+                    f"Задача: {task_request}\n\n"
+                    f"Коллеги уже высказались:\n{prev_block}\n\n"
+                    f"Твоя роль — {name}. Дополни их, не повторяй сказанное."
+                )
+            else:
+                prompt = f"Задача: {task_request}"
+
+            response = agent.respond(prompt)
             output_fn(response)
             results.append((name, response))
         return results
