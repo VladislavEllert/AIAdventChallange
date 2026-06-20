@@ -111,15 +111,19 @@ class TaskCoordinator:
         task: "TaskState",
         output_fn: Callable[[str], None],
         retry_count: int,
+        user_feedback: str = "",
     ) -> tuple[str, int]:
         """
         Рой → синтез → проверка плана.
         Возвращает (plan, retry_count).
+        user_feedback — замечания пользователя, инжектируются в синтез.
         Если оркестратор отклоняет план — повторяем рой (до MAX_RETRIES).
         """
         for attempt in range(MAX_RETRIES):
             swarm_results = self.swarm.run_swarm(task.request, output_fn)
-            plan = self.swarm.synthesize_plan(task.request, swarm_results, output_fn)
+            plan = self.swarm.synthesize_plan(
+                task.request, swarm_results, output_fn, user_feedback=user_feedback
+            )
             ok, comment = self.swarm.check_plan(task.request, plan, output_fn)
             if ok:
                 output_fn("\n── [УТВЕРЖДЁННЫЙ ПЛАН] ──")
@@ -137,27 +141,38 @@ class TaskCoordinator:
         self,
         task: TaskState,
         output_fn: Callable[[str], None] = print,
-        confirm_fn: Callable[[str], bool] | None = None,
+        confirm_fn: Callable[[str], str | None] | None = None,
     ) -> TaskState:
+        """
+        confirm_fn возвращает:
+          ""   — продолжить
+          None — приостановить задачу
+          str  — фидбек пользователя → перезапустить текущую стадию с поправками
+        """
         retry_count = 0
+        user_feedback = ""
 
         while task.stage != Stage.DONE:
             stage = task.stage
 
             # ── PLANNING: рой + оркестратор ──────────────────────────────────
             if stage == Stage.PLANNING:
-                plan, retry_count = self._run_planning(task, output_fn, retry_count)
+                plan, retry_count = self._run_planning(
+                    task, output_fn, retry_count, user_feedback=user_feedback
+                )
+                user_feedback = ""
                 task.plan = plan
-                next_stage = Stage.EXECUTION
-                task.stage = next_stage
+                task.stage = Stage.EXECUTION
                 task.save()
 
             # ── EXECUTION: агент + проверка оркестратора ──────────────────────
             elif stage == Stage.EXECUTION:
-                feedback = ""
+                val_feedback = ""
                 if task.validation_result and VALIDATION_FAIL_MARKER in task.validation_result:
-                    feedback = f"\n\nФидбек от валидации:\n{task.validation_result}"
-                prompt = f"Задача: {task.request}\n\nПлан:\n{task.plan}{feedback}"
+                    val_feedback = f"\n\nФидбек от валидации:\n{task.validation_result}"
+                user_fb_block = f"\n\nПоправки пользователя:\n{user_feedback}" if user_feedback else ""
+                user_feedback = ""
+                prompt = f"Задача: {task.request}\n\nПлан:\n{task.plan}{val_feedback}{user_fb_block}"
 
                 output_fn(f"\n── [EXECUTION] ──")
                 agent = self._agent(Stage.EXECUTION)
@@ -165,7 +180,6 @@ class TaskCoordinator:
                 output_fn(response)
                 task.execution_result = response
 
-                # Оркестратор проверяет выполнение
                 ok, comment = self.swarm.check_execution(
                     task.request, task.plan, response, output_fn
                 )
@@ -178,10 +192,9 @@ class TaskCoordinator:
                         return task
                     output_fn(f"[!] Повтор выполнения ({retry_count}/{MAX_RETRIES})...")
                     task.save()
-                    continue  # retry execution
+                    continue
 
-                next_stage = Stage.VALIDATION
-                task.stage = next_stage
+                task.stage = Stage.VALIDATION
                 task.save()
 
             # ── VALIDATION: агент + финальный вердикт ─────────────────────────
@@ -197,12 +210,11 @@ class TaskCoordinator:
                 output_fn(response)
                 task.validation_result = response
 
-                # Оркестратор выносит финальный вердикт
                 done, comment = self.swarm.final_verdict(
                     task.request, task.plan, response, output_fn
                 )
                 if done:
-                    next_stage = Stage.DONE
+                    task.stage = Stage.DONE
                 else:
                     retry_count += 1
                     output_fn(f"\n[Оркестратор] Задача требует доработки: {comment}")
@@ -211,16 +223,22 @@ class TaskCoordinator:
                         task.stage = Stage.EXECUTION
                         task.save()
                         return task
-                    next_stage = Stage.EXECUTION
+                    task.stage = Stage.EXECUTION
 
-                task.stage = next_stage
                 task.save()
 
             # ── пауза между стадиями ──────────────────────────────────────────
             if task.stage != Stage.DONE and self.interactive and confirm_fn:
-                if not confirm_fn(f"\nПродолжить → [{task.stage.value}]?"):
+                result = confirm_fn(f"\nПродолжить → [{task.stage.value}]?")
+                if result is None:
                     output_fn("Задача приостановлена. /task resume — продолжить.")
                     return task
+                elif result:
+                    # фидбек пользователя → перезапустить предыдущую стадию
+                    output_fn(f"[↩] Возврат к [{stage.value}] с поправками пользователя...")
+                    user_feedback = result
+                    task.stage = stage
+                    task.save()
 
         output_fn("\n── [DONE] Задача завершена. ──")
         return task

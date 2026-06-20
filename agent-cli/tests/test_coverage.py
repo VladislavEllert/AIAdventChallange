@@ -493,7 +493,7 @@ def test_coordinator_pause_on_user_reject():
                 result = coord.run(
                     task,
                     output_fn=output_lines.append,
-                    confirm_fn=lambda _: False,  # always reject
+                    confirm_fn=lambda _: None,  # always pause
                 )
         finally:
             cfg.TASKS_DIR = orig
@@ -533,7 +533,7 @@ def test_coordinator_pause_confirm_continue():
                 result = coord.run(
                     task,
                     output_fn=lambda _: None,
-                    confirm_fn=lambda _: True,
+                    confirm_fn=lambda _: "",  # always continue
                 )
         finally:
             cfg.TASKS_DIR = orig
@@ -1566,19 +1566,32 @@ def _make_tui_bare():
 def test_confirm_fn_yes():
     tui = _make_tui_bare()
     with patch.object(tui, "_prompt", return_value="y"):
-        assert tui._confirm_fn("Продолжить?") is True
+        assert tui._confirm_fn("Продолжить?") == ""  # continue
+
+
+def test_confirm_fn_enter():
+    tui = _make_tui_bare()
+    with patch.object(tui, "_prompt", return_value=""):
+        assert tui._confirm_fn("Продолжить?") == ""  # enter = continue
 
 
 def test_confirm_fn_da():
     tui = _make_tui_bare()
     with patch.object(tui, "_prompt", return_value="да"):
-        assert tui._confirm_fn("Продолжить?") is True
+        assert tui._confirm_fn("Продолжить?") == ""  # continue
 
 
 def test_confirm_fn_no():
     tui = _make_tui_bare()
     with patch.object(tui, "_prompt", return_value="n"):
-        assert tui._confirm_fn("Продолжить?") is False
+        assert tui._confirm_fn("Продолжить?") is None  # pause
+
+
+def test_confirm_fn_feedback():
+    tui = _make_tui_bare()
+    with patch.object(tui, "_prompt", return_value="добавь обработку ошибок"):
+        result = tui._confirm_fn("Продолжить?")
+        assert result == "добавь обработку ошибок"  # feedback → re-run
 
 
 # ── tui _profile_onboard empty answer skips ───────────────────────────────────

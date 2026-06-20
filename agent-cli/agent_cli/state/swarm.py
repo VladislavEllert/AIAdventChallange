@@ -103,6 +103,7 @@ class SwarmRunner:
         task_request: str,
         swarm_results: list[tuple[str, str]],
         output_fn: OutputFn,
+        user_feedback: str = "",
     ) -> str:
         """
         Оркестратор синтезирует мнения роя в единый план.
@@ -111,11 +112,15 @@ class SwarmRunner:
         expert_block = "\n\n".join(
             f"=== Мнение: {name} ===\n{resp}" for name, resp in swarm_results
         )
+        feedback_block = (
+            f"\n\nПоправки пользователя к предыдущему плану:\n{user_feedback}"
+            if user_feedback else ""
+        )
         prompt = (
             f"{self._orc_context()}"
             f"Режим: СИНТЕЗ-ПЛАНА\n\n"
             f"Задача пользователя: {task_request}\n\n"
-            f"Мнения экспертов:\n{expert_block}\n\n"
+            f"Мнения экспертов:\n{expert_block}{feedback_block}\n\n"
             f"Синтезируй в один чёткий план. Заверши маркером {PLAN_MARKER}."
         )
         output_fn("\n── [ОРКЕСТРАТОР / СИНТЕЗ ПЛАНА] ──")

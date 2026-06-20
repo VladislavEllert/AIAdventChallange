@@ -330,9 +330,24 @@ class TUI:
             chat_summary=self.agent.memory.summary,
         )
 
-    def _confirm_fn(self, msg: str) -> bool:
-        answer = self._prompt(f"{msg} [y/n]: ").strip().lower()
-        return answer in ("y", "yes", "д", "да")
+    def _confirm_fn(self, msg: str) -> str | None:
+        """
+        Возвращает:
+          ""   — продолжить (y/enter)
+          None — приостановить (n)
+          str  — фидбек пользователя → перезапустить стадию с поправками
+        """
+        console.print(f"[dim]{msg}[/dim]")
+        console.print("[dim]  y/Enter — продолжить  │  n — пауза  │  текст — дать поправки и переработать[/dim]")
+        try:
+            answer = self._prompt("▶ ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if not answer or answer.lower() in ("y", "yes", "д", "да"):
+            return ""
+        if answer.lower() in ("n", "no", "н", "нет"):
+            return None
+        return answer  # фидбек → перезапуск стадии
 
     def _handle_task(self, args: list[str]) -> None:
         sub = args[0] if args else "help"
