@@ -4,7 +4,10 @@ from agent_cli.core.memory import Memory
 from agent_cli.core.prompt_builder import build_system_prompt
 from agent_cli.config import DEFAULT_MODEL
 
-DEFAULT_PERSONA = "Ты полезный ИИ-ассистент. Отвечай точно и по делу."
+DEFAULT_PERSONA = (
+    "Ты полезный ИИ-ассистент. Отвечай точно и по делу. "
+    "У тебя есть история диалога с пользователем — используй её при ответах."
+)
 
 _SUMMARY_SYSTEM = (
     "Ты ассистент для сжатия переписки. "

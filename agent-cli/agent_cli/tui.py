@@ -118,16 +118,16 @@ class TUI:
         memory, stats, model = self.store.load_session(session_id)
         self.session_id = session_id
         self.model = model
-        self.agent = self._make_agent()
-        self.agent.memory = memory
-        self.agent.session_stats = stats
-        # Загружаем профиль если был
+        # Загружаем профиль если был — до создания агента
         meta = self.store.get_meta(session_id)
         if meta and meta.profile_name:
             try:
                 self.current_profile = UserProfile.load(meta.profile_name)
             except FileNotFoundError:
                 pass
+        self.agent = self._make_agent()
+        self.agent.memory = memory
+        self.agent.session_stats = stats
 
     def _handle_session(self, args: list[str]) -> None:
         sub = args[0] if args else "list"
