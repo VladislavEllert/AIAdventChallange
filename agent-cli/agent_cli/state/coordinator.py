@@ -122,6 +122,8 @@ class TaskCoordinator:
             plan = self.swarm.synthesize_plan(task.request, swarm_results, output_fn)
             ok, comment = self.swarm.check_plan(task.request, plan, output_fn)
             if ok:
+                output_fn("\n── [УТВЕРЖДЁННЫЙ ПЛАН] ──")
+                output_fn(plan)
                 return plan, retry_count
             retry_count += 1
             output_fn(f"\n[Оркестратор] План требует доработки: {comment}")
