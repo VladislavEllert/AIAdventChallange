@@ -337,7 +337,8 @@ class TUI:
           None — приостановить (n)
           str  — фидбек пользователя → перезапустить стадию с поправками
         """
-        console.print(f"[dim]{msg}[/dim]")
+        from rich.markup import escape
+        console.print(f"[dim]{escape(msg)}[/dim]")
         console.print("[dim]  y/Enter — продолжить  │  n — пауза  │  текст — дать поправки и переработать[/dim]")
         try:
             answer = self._prompt("▶ ").strip()
