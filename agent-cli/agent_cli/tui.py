@@ -32,7 +32,7 @@ console = Console()
 _COMMANDS = [
     "/help", "/model", "/clear", "/exit",
     "/profile", "/profile show", "/profile list", "/profile switch", "/profile edit", "/profile create",
-    "/task", "/task start", "/task resume", "/task jump",
+    "/task", "/task start", "/task resume", "/task exit", "/task jump",
     "/state",
     "/invariants", "/invariants list", "/invariants add",
     "/session", "/session new", "/session list", "/session switch", "/session rename", "/session delete",
@@ -412,8 +412,15 @@ class TUI:
                     )
                 )
 
+        elif sub == "exit":
+            if not self.current_task:
+                console.print("[yellow]Нет активной задачи.[/]")
+            else:
+                self.current_task = None
+                console.print("[dim]Вышел из контекста задачи. Обычный чат.[/dim]")
+
         else:
-            console.print("Использование: /task start [запрос] | /task resume | /task jump <stage>")
+            console.print("Использование: /task start [запрос] | /task resume | /task exit | /task jump <stage>")
 
     # ── invariants handlers ───────────────────────────────────────────────────
 
@@ -452,7 +459,16 @@ class TUI:
         )
 
     def _chat(self, user_input: str) -> None:
-        chunk_iter, ref = self.agent.respond_stream_with_stats(user_input)
+        # Если есть активная задача — инжектируем её результат как контекст
+        working_context = ""
+        if self.current_task and self.current_task.execution_result:
+            working_context = (
+                f"[Контекст активной задачи]\n"
+                f"Запрос: {self.current_task.request}\n\n"
+                f"Утверждённый план:\n{self.current_task.plan}\n\n"
+                f"Результат выполнения:\n{self.current_task.execution_result}"
+            )
+        chunk_iter, ref = self.agent.respond_stream_with_stats(user_input, working_context)
 
         text = Text()
         with Live(Panel(text, title="[cyan]Assistant[/cyan]", border_style="cyan"), refresh_per_second=15) as live:
@@ -505,6 +521,7 @@ class TUI:
                 "\n[bold]Задачи — FSM (Дни 13–15):[/bold]\n"
                 "  /task start [запрос]                   — запустить пайплайн (рой агентов)\n"
                 "  /task resume                           — продолжить после паузы\n"
+                "  /task exit                             — выйти из контекста задачи\n"
                 "  /task jump <stage>                     — проверка FSM-перехода (демо)\n"
                 "  /state                                 — текущее состояние задачи\n"
                 "\n[bold]Инварианты (День 14):[/bold]\n"
