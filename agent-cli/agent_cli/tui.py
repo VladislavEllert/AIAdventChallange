@@ -354,6 +354,7 @@ class TUI:
                 output_fn=lambda x: console.print(x),
                 confirm_fn=self._confirm_fn,
             )
+            self._inject_task_into_memory(self.current_task)
 
         elif sub == "resume":
             if not self.current_task:
@@ -370,6 +371,7 @@ class TUI:
                 output_fn=lambda x: console.print(x),
                 confirm_fn=self._confirm_fn,
             )
+            self._inject_task_into_memory(self.current_task)
 
         elif sub == "jump":
             # Демо: попытка принудительно перепрыгнуть стадию
@@ -448,6 +450,17 @@ class TUI:
         else:
             console.print("Использование: /invariants list | /invariants add <текст>")
 
+    # ── task memory integration ───────────────────────────────────────────────
+
+    def _inject_task_into_memory(self, task: "TaskState | None") -> None:
+        """После завершения задачи вносим результат в память чата как реальные сообщения."""
+        if not task or task.stage != Stage.DONE:
+            return
+        if not task.execution_result:
+            return
+        self.agent.memory.add_message("user", f"[Задача: {task.request}]")
+        self.agent.memory.add_message("assistant", task.execution_result)
+
     # ── chat ──────────────────────────────────────────────────────────────────
 
     def _stats_line(self, usage: TokenUsage) -> str:
@@ -459,16 +472,7 @@ class TUI:
         )
 
     def _chat(self, user_input: str) -> None:
-        # Если есть активная задача — инжектируем её результат как контекст
-        working_context = ""
-        if self.current_task and self.current_task.execution_result:
-            working_context = (
-                f"[Контекст активной задачи]\n"
-                f"Запрос: {self.current_task.request}\n\n"
-                f"Утверждённый план:\n{self.current_task.plan}\n\n"
-                f"Результат выполнения:\n{self.current_task.execution_result}"
-            )
-        chunk_iter, ref = self.agent.respond_stream_with_stats(user_input, working_context)
+        chunk_iter, ref = self.agent.respond_stream_with_stats(user_input)
 
         text = Text()
         with Live(Panel(text, title="[cyan]Assistant[/cyan]", border_style="cyan"), refresh_per_second=15) as live:
