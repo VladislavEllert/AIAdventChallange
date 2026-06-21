@@ -151,9 +151,28 @@ class TaskCoordinator:
         """
         retry_count = 0
         user_feedback = ""
+        _first_iter = True
+        _prev_stage: dict[Stage, Stage] = {
+            Stage.EXECUTION: Stage.PLANNING,
+            Stage.VALIDATION: Stage.EXECUTION,
+        }
 
         while task.stage != Stage.DONE:
             stage = task.stage
+
+            # На resume: пауза ПЕРЕД стадией (первая итерация, не старт с нуля)
+            if _first_iter and stage != Stage.PLANNING and self.interactive and confirm_fn:
+                result = confirm_fn(f"\nПродолжить → [{stage.value}]?")
+                _first_iter = False
+                if result is None:
+                    output_fn("Задача приостановлена. /task resume — продолжить.")
+                    return task
+                elif result:
+                    user_feedback = result
+                    task.stage = _prev_stage.get(stage, stage)
+                    task.save()
+                    continue
+            _first_iter = False
 
             # ── PLANNING: рой + оркестратор ──────────────────────────────────
             if stage == Stage.PLANNING:
