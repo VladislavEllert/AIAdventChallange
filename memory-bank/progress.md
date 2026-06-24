@@ -19,6 +19,13 @@
 | 03 | 13 | Task State Machine: 4 стадии-агента (planning→execution→validation→done), детерминированные переходы, пауза/resume | done | [agent-cli](../agent-cli/) | [▶](https://www.loom.com/share/e516f7eb3f634c52b6870968d3103ac2) |
 | 03 | 14 | Инварианты: правила отдельно от диалога, инжект в промпт, проверка код+LLM, отказ нарушать | done | [agent-cli](../agent-cli/) | [▶](https://www.loom.com/share/216ee8cfa37f404087023ccd88672676) |
 | 04 | 15 | Контролируемые переходы: рой 3 агентов (PLANNING) + Оркестратор-надсмотрщик на всех стадиях, именованные сессии SQLite с персистом, `/session` команды, `/task jump` FSM-демо | done | [agent-cli](../agent-cli/) | todo |
+| **Web** | **15+** | **Веб-приложение:** FastAPI + React, портирует все CLI функции, SSE стриминг, Task FSM UI, Invariants check+rollback, Profile инжекция, Model switching | **done** | [agent-web](../agent-web/) | **todo** |
+| 04 | 16 | MCP: FastMCP-сервер на VPS (194.226.115.120:8001), 3 инструмента, day16_connect.py → список tools | done | [mcp-server](../mcp-server/) | todo |
+| 04 | 17 | MCP: agent-web интегрирует tools (tool_start/tool_done SSE), web_search + get_moex_quote → живые ответы | done | [agent-web](../agent-web/) · [mcp-server](../mcp-server/) | todo |
+| 04 | 18 | MCP: APScheduler кэш MOEX каждые 30 сек, get_moex_summary, тесты server + mcp_client | done | [agent-web](../agent-web/) · [mcp-server](../mcp-server/) | todo |
 
 > **Пивот (день 12+):** переходим с iOS (`AgentChat/`) на CLI/TUI на Python (`agent-cli/`).
 > AgentChat остаётся, не удаляем. Причина: недели 4–7 (MCP/RAG/VPS/пайплайны) iOS не тянет.
+>
+> **День 15+ (Web):** Параллельно CLI разработан web UI, портирует 100% функционала CLI.
+> Архитектура готова к неделям 4–7 (MCP инструменты, RAG, VPS демо).

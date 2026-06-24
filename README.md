@@ -18,7 +18,10 @@
 │   ├── ios-agent-app/   # спека приложения AgentChat
 │   └── lessons/
 ├── week-XX/day-YY/      # задания по дням (README + код/заметки)
-└── AgentChat/           # iOS-приложение (неделя 2+): мульти-агентный чат на ProxyAPI
+├── AgentChat/           # iOS-приложение (неделя 2+): мульти-агентный чат на ProxyAPI
+├── agent-cli/           # CLI/TUI (неделя 3+): Python, stateful-агент + Task FSM + инварианты
+├── agent-web/           # Веб-приложение (день 15+): FastAPI + React, портирует CLI
+└── mcp-server/          # MCP-сервер (неделя 4): FastMCP на VPS, web_search + MOEX котировки
 ```
 
 ## Прогресс
@@ -40,6 +43,9 @@
 | 03 | 13 | Task State Machine: 4 стадии-агента (planning→execution→validation→done), детерминированные переходы, пауза / resume | done | [agent-cli](agent-cli/) | [▶](https://www.loom.com/share/e516f7eb3f634c52b6870968d3103ac2) |
 | 03 | 14 | Инварианты: хранение отдельно от диалога, инжект в промпт, LLM-проверка, отказ при нарушении | done | [agent-cli](agent-cli/) | [▶](https://www.loom.com/share/216ee8cfa37f404087023ccd88672676) |
 | 04 | 15 | Контролируемые переходы: рой 3 агентов на PLANNING + Оркестратор на каждой стадии, SQLite-сессии с персистом, `/session` switch/rename/delete, `/task jump` FSM-демо | done | [agent-cli](agent-cli/) | [▶](https://drive.google.com/file/d/17tSGsD85Gp4LIqengHKv3sk8l8zB9ZmK/view?usp=share_link) |
+| 04 | 16 | MCP: FastMCP-сервер на VPS (194.226.115.120:8001), 3 инструмента, day16_connect.py → список tools | done | [mcp-server](mcp-server/) | todo |
+| 04 | 17 | MCP: agent-web интегрирует tools (tool_start/tool_done SSE), web_search + get_moex_quote → живые ответы | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | todo |
+| 04 | 18 | MCP: APScheduler кэш MOEX каждые 30 сек, get_moex_summary, тесты server + mcp_client | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | todo |
 
 ## Приложение AgentChat (неделя 2)
 
@@ -51,3 +57,56 @@
 - [`ProxyAPIClient.swift`](AgentChat/AgentChat/Networking/ProxyAPIClient.swift) — сам HTTP-вызов LLM (URLSession → ProxyAPI), про агентов не знает.
 
 Спека и план: [`memory-bank/ios-agent-app/`](memory-bank/ios-agent-app/). Запуск — см. [`week-02/day-06/README.md`](week-02/day-06/README.md).
+
+## Приложение agent-cli (неделя 3)
+
+CLI/TUI на Python (prompt_toolkit + rich): полнофункциональный stateful-агент.
+
+**Чем отличается от iOS:**
+- Пауза в Task FSM с возможностью resume после закрытия
+- Профиль пользователя как Markdown-файлы с авто-роутингом фактов
+- Инварианты (правила) как отдельный слой, проверяются после каждого ответа
+- Рой 3 агентов на стадии PLANNING + Оркестратор на всех стадиях
+- Именованные сессии в SQLite с полным персистом (state machine, модель, профиль)
+- Все `/` команды: `/model`, `/profile`, `/invariants`, `/task`, `/session`, `/state`, `/help`
+
+Ключевой код:
+- [`core/agent.py`](agent-cli/agent_cli/core/agent.py) — Agent с `respond_stream_with_stats()`, auto-summarize на N сообщ.
+- [`core/memory.py`](agent-cli/agent_cli/core/memory.py) — 3 слоя: short_term (последние N), summary (старое сжатое), working (рабочая память)
+- [`core/prompt_builder.py`](agent-cli/agent_cli/core/prompt_builder.py) — система промптов: persona + profile + summary + invariants
+- [`state/coordinator.py`](agent-cli/agent_cli/state/coordinator.py) — Task FSM: planning → execution → validation → done
+- [`invariants/checker.py`](agent-cli/agent_cli/invariants/checker.py) — check_code() (fast) + check_llm() (thorough) с rollback при нарушении
+- [`tui.py`](agent-cli/agent_cli/tui.py) — интерфейс, REPL, slash-команды
+
+Старт: `python -m agent_cli`.
+
+## Приложение agent-web (день 15+)
+
+Веб-приложение (FastAPI + React, Vite): портирует все функции agent-cli с улучшенным UI.
+
+**Архитектура:**
+- **Backend:** FastAPI с SSE стримингом, Zustand для state management в памяти (no DB для агентов)
+- **Frontend:** React, Vite, TypeScript; liquid glass дизайн с dark/light theme
+- **Стриминг:** `/api/chat/stream` → SSE события (chunk, violation, usage, done)
+- **Инварианты:** check_code() + check_llm() после каждого ответа, rollback при нарушении
+- **Профили:** ProfilesPanel выбирает профиль → инжектируется в system prompt каждого запроса
+- **Модель:** UI переключает модель → отправляется в chat request → агент использует её
+- **Task FSM:** Отдельная панель ⚙️ → SSE stream стадий (planning, execution, validation, done) с live output
+- **Память:** 3 слоя видны в 🧠 панели, N настраивается через ⚙️ в MemoryPanel
+
+Ключевой код:
+- [`agent_web/routers/chat.py`](agent-web/agent_web/routers/chat.py) — SSE stream + инвариант проверка + rollback
+- [`agent_web/services/agent_manager.py`](agent-web/agent_web/services/agent_manager.py) — per-session Agent cache
+- [`agent_web/services/task_runner.py`](agent-web/agent_web/services/task_runner.py) — TaskCoordinator в thread + asyncio.Queue → SSE
+- [`frontend/src/api/chat.ts`](agent-web/frontend/src/api/chat.ts) — streamChat() с model + profile_name
+- [`frontend/src/components/panels/MemoryPanel.tsx`](agent-web/frontend/src/components/panels/MemoryPanel.tsx) — 3 слоя памяти + N настройка
+- [`frontend/src/components/panels/TaskPanel.tsx`](agent-web/frontend/src/components/panels/TaskPanel.tsx) — Task FSM UI с confirm/feedback
+- [`frontend/src/stores/useAppStore.ts`](agent-web/frontend/src/stores/useAppStore.ts) — activeSessionId, activeModel, activeProfileName, rightPanelTab
+
+**Запуск:**
+```bash
+cd agent-web
+python -m agent_web  # FastAPI на localhost:8765
+cd frontend && npm run dev  # React на localhost:5173
+```
+Браузер: `http://localhost:5173`
