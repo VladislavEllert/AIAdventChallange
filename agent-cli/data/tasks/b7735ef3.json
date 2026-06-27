@@ -1,0 +1,10 @@
+{
+  "task_id": "b7735ef3",
+  "request": "Напиши Сортировку вставками н python",
+  "stage": "planning",
+  "plan": "",
+  "execution_result": "",
+  "validation_result": "",
+  "profile_name": "profile_a",
+  "model": "openai/gpt-4o-mini"
+}

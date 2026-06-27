@@ -1,0 +1,2 @@
+[console_scripts]
+agent-cli = agent_cli.__main__:main

@@ -1,0 +1,131 @@
+import { useEffect } from 'react'
+import Sidebar from './Sidebar'
+import StatusBar from './StatusBar'
+import ChatArea from '../chat/ChatArea'
+import ChatInput from '../chat/ChatInput'
+import RightPanel from '../panels/RightPanel'
+import { useAppStore } from '../../stores/useAppStore'
+import { useChatStore } from '../../stores/useChatStore'
+
+export default function MainLayout() {
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen)
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar)
+  const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
+  const toggleRightPanel = useAppStore((s) => s.toggleRightPanel)
+  const activeAgentPersona = useAppStore((s) => s.activeAgentPersona)
+  const rightPanelTab = useAppStore((s) => s.rightPanelTab)
+  const setRightPanelTab = useAppStore((s) => s.setRightPanelTab)
+  const violation = useChatStore((s) => s.violation)
+  const clearViolation = useChatStore((s) => s.clearViolation)
+
+  // Auto-dismiss violation after 5s
+  useEffect(() => {
+    if (!violation) return
+    const t = setTimeout(clearViolation, 5000)
+    return () => clearTimeout(t)
+  }, [violation, clearViolation])
+
+  // Alt+P keyboard shortcut for right panel
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'p') { e.preventDefault(); toggleRightPanel() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleRightPanel])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-gradient)' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+        {/* Sidebar */}
+        <Sidebar />
+
+        {/* Chat column */}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+
+          {/* Top bar */}
+          <div className="glass" style={{
+            height: 52, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '0 16px', flexShrink: 0, borderBottom: '1px solid var(--border)',
+          }}>
+            {!sidebarOpen && (
+              <button onClick={toggleSidebar} title="Открыть боковую панель"
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 15,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>☰</button>
+            )}
+
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}>
+              {activeAgentPersona
+                ? <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦ Custom agent</span>
+                : 'Чат'
+              }
+            </span>
+
+            {/* Right panel toggle buttons */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[
+                { icon: '🧠', title: 'Память', tab: 'memory' as const },
+                { icon: '⚙️', title: 'Задача FSM', tab: 'task' as const },
+                { icon: '🛡', title: 'Инварианты', tab: 'invariants' as const },
+                { icon: '👤', title: 'Профиль', tab: 'profiles' as const },
+              ].map(({ icon, title, tab }) => {
+                const isActive = rightPanelOpen && rightPanelTab === tab
+                return (
+                  <button key={tab}
+                    onClick={() => {
+                      if (rightPanelOpen && rightPanelTab === tab) {
+                        toggleRightPanel()
+                      } else {
+                        setRightPanelTab(tab)
+                        if (!rightPanelOpen) toggleRightPanel()
+                      }
+                    }}
+                    title={title}
+                    style={{
+                      width: 32, height: 32, borderRadius: 8, border: 'none',
+                      background: isActive ? 'var(--accent-bg)' : 'transparent',
+                      color: isActive ? 'var(--accent)' : 'var(--text-tertiary)',
+                      cursor: 'pointer', fontSize: 16,
+                    }}>{icon}</button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Messages */}
+          <ChatArea />
+
+          {/* Violation alert */}
+          {violation && (
+            <div style={{
+              margin: '0 16px 8px', padding: '10px 16px', borderRadius: 12,
+              background: 'var(--red-bg)', border: '1px solid color-mix(in srgb, var(--red) 40%, transparent)',
+              color: 'var(--red)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <span>⚠</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>Нарушение инварианта</div>
+                {violation.desc && <div style={{ fontSize: 12, opacity: 0.8 }}>{violation.desc}</div>}
+              </div>
+              <button onClick={clearViolation}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 18 }}>×</button>
+            </div>
+          )}
+
+          {/* Input */}
+          <ChatInput />
+        </div>
+
+        {/* Right panel */}
+        <RightPanel />
+      </div>
+
+      <StatusBar />
+    </div>
+  )
+}

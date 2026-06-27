@@ -74,6 +74,183 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         agent.model = req.model
 
     def generate():
+        import time
+        import re as _re
+        from datetime import datetime as _dt
+
+        msg = req.message.strip()
+
+        # ── /mcp — list available tools ───────────────────────────────────
+        if msg.lower() in ("/mcp", "/mcp tools", "/mcp list"):
+            try:
+                from agent_web.services.mcp_client import MCP_SERVERS, _tool_registry
+                tools = get_tools_sync()
+                lines = ["**🔧 MCP Tools** (2 сервера)\n\n"]
+                # Group by server
+                by_server: dict[str, list] = {}
+                for t in tools:
+                    sname = _tool_registry.get(t["function"]["name"], "?")
+                    by_server.setdefault(sname, []).append(t)
+                server_labels = {
+                    "finance": f"🖥️ VPS Finance ({MCP_SERVERS.get('finance', '')})",
+                    "github":  f"🐙 GitHub MCP ({MCP_SERVERS.get('github', '')})",
+                }
+                for sname, stools in by_server.items():
+                    lines.append(f"\n**{server_labels.get(sname, sname)}**\n")
+                    for t in stools:
+                        fn = t["function"]
+                        desc = fn["description"].split(".")[0]
+                        lines.append(f"• `{fn['name']}` — {desc}\n")
+                lines.append(f"\nВсего инструментов: {len(tools)}")
+                yield _sse_event("chunk", {"text": "".join(lines)})
+            except Exception as e:
+                yield _sse_event("chunk", {"text": f"❌ MCP недоступен: {e}"})
+            yield _sse_event("done", {})
+            return
+
+        # ── /history TICKER [minutes] — aggregated history from SQLite ──────
+        if msg.lower().startswith("/history"):
+            parts = msg.split()
+            ticker = parts[1].upper() if len(parts) > 1 else "IMOEX"
+            minutes = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 60
+            try:
+                result = call_tool_sync("get_moex_history", {"ticker": ticker, "minutes": minutes})
+                yield _sse_event("chunk", {"text": f"📈 **История {ticker}**\n\n{result}"})
+            except Exception as e:
+                yield _sse_event("chunk", {"text": f"❌ Ошибка: {e}"})
+            yield _sse_event("done", {})
+            return
+
+        # ── /ping TICKER [interval] — live price stream ───────────────────
+        if msg.lower().startswith("/ping"):
+            parts = msg.split()
+            ticker = parts[1].upper() if len(parts) > 1 else "IMOEX"
+            interval = max(1, int(parts[2])) if len(parts) > 2 and parts[2].isdigit() else 5
+            count = 10
+
+            # Detect index vs stock
+            is_index = ticker in ("IMOEX", "RTSI", "MICEXINDEXCF")
+            tool_name = "get_moex_index" if is_index else "get_moex_quote"
+            unit = "пунктов" if is_index else "RUB"
+
+            yield _sse_event("chunk", {
+                "text": f"📡 **{ticker}** — мониторинг каждые {interval}с ({count} замеров)\n\n```\n"
+            })
+
+            start_val = None
+            all_values: list[float] = []
+
+            for i in range(count):
+                ts = _dt.now().strftime("%H:%M:%S")
+                try:
+                    raw = call_tool_sync(tool_name, {"ticker": ticker})
+                    # extract first float from response
+                    nums = _re.findall(r"\d+[\.,]\d+", raw)
+                    val = float(nums[0].replace(",", ".")) if nums else None
+                except Exception as exc:
+                    raw, val = f"ошибка: {exc}", None
+
+                if val is not None:
+                    all_values.append(val)
+                    if start_val is None:
+                        start_val = val
+                    delta = ((val - start_val) / start_val * 100) if start_val else 0
+                    sign = "▲" if delta >= 0 else "▼"
+                    line = f"{ts}  {ticker:<8}  {val:>10.2f} {unit}  {sign}{abs(delta):.2f}%\n"
+                else:
+                    line = f"{ts}  {raw}\n"
+
+                yield _sse_event("chunk", {"text": line})
+
+                if i < count - 1:
+                    time.sleep(interval)
+
+            # Summary
+            if all_values and start_val:
+                end_val = all_values[-1]
+                total = ((end_val - start_val) / start_val * 100)
+                sign = "▲" if total >= 0 else "▼"
+                yield _sse_event("chunk", {"text": (
+                    f"```\n\n📊 **Итог**: {start_val:.2f} → {end_val:.2f}  "
+                    f"{sign} {total:+.2f}%  "
+                    f"мин {min(all_values):.2f} / макс {max(all_values):.2f}"
+                )})
+            else:
+                yield _sse_event("chunk", {"text": "```"})
+
+            yield _sse_event("done", {})
+            return
+        # ── /analyze SYMBOL [interval] — guaranteed 3-step crypto pipeline ──
+        if msg.lower().startswith("/analyze"):
+            parts = msg.split()
+            symbol = parts[1].upper() if len(parts) > 1 else "BTCUSDT"
+            interval = parts[2] if len(parts) > 2 else "1h"
+            filename = f"{symbol.lower()}_{interval}_analysis.md"
+
+            yield _sse_event("chunk", {"text": f"🔬 **Анализ {symbol}** (интервал {interval})\n\n"})
+
+            # Step 1: fetch klines
+            yield _sse_event("tool_start", {"name": "get_crypto_klines", "label": "📊 Загружаю свечи Binance..."})
+            try:
+                klines_json = call_tool_sync("get_crypto_klines", {"symbol": symbol, "interval": interval, "limit": 50})
+            except Exception as e:
+                klines_json = ""
+                yield _sse_event("chunk", {"text": f"❌ Ошибка загрузки свечей: {e}\n"})
+            yield _sse_event("tool_done", {"name": "get_crypto_klines", "result_preview": klines_json[:80]})
+
+            if not klines_json or klines_json.startswith("Error") or klines_json.startswith("Binance"):
+                yield _sse_event("chunk", {"text": f"❌ {klines_json}"})
+                yield _sse_event("done", {})
+                return
+
+            # Step 2: calculate indicators
+            yield _sse_event("tool_start", {"name": "calculate_indicators", "label": "🧮 Считаю RSI/MACD..."})
+            try:
+                indicators = call_tool_sync("calculate_indicators", {"klines_json": klines_json})
+            except Exception as e:
+                indicators = f"Ошибка расчёта: {e}"
+            yield _sse_event("tool_done", {"name": "calculate_indicators", "result_preview": indicators[:80]})
+
+            # Step 3: LLM generates report text
+            analysis_prompt = agent._build_messages(
+                f"Ты — финансовый аналитик. Вот технический анализ {symbol} (интервал {interval}):\n\n"
+                f"{indicators}\n\n"
+                f"Напиши краткий торговый отчёт: что означают эти показатели, "
+                f"какой сигнал (BUY/SELL/HOLD) и почему. 3-5 предложений."
+            )
+            report_text = ""
+            chunk_iter_a, ref_a = agent.provider.chat_stream_with_stats(analysis_prompt, agent.model)
+            for chunk in chunk_iter_a:
+                report_text += chunk
+                yield _sse_event("chunk", {"text": chunk})
+            usage = ref_a.usage
+            agent.session_stats.add(usage)
+
+            # Step 4: save report
+            full_report = f"# {symbol} Анализ ({interval})\n\n{indicators}\n\n## Вывод\n\n{report_text}"
+            yield _sse_event("tool_start", {"name": "save_report", "label": "💾 Сохраняю отчёт..."})
+            try:
+                save_result = call_tool_sync("save_report", {"filename": filename, "content": full_report})
+            except Exception as e:
+                save_result = f"Ошибка сохранения: {e}"
+            yield _sse_event("tool_done", {"name": "save_report", "result_preview": save_result[:80]})
+
+            yield _sse_event("chunk", {"text": f"\n\n---\n_{save_result}_"})
+
+            agent.memory.add_message("user", req.message)
+            agent.memory.add_message("assistant", report_text)
+
+            yield _sse_event("usage", {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "cost_rub": round(usage.cost_rub, 6),
+                "elapsed_ms": usage.elapsed_ms,
+            })
+            yield _sse_event("done", {})
+            return
+        # ─────────────────────────────────────────────────────────────────
+
         # ── MCP tool calling ──────────────────────────────────────────────
         tool_used = False
         usage = None
@@ -87,21 +264,81 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
             try:
                 agent._try_summarize()
                 all_messages = agent._build_messages(req.message)
+
+                # Always inject current datetime — never let model guess the date
+                try:
+                    current_dt = call_tool_sync("get_current_datetime", {})
+                except Exception:
+                    current_dt = None
+
+                tool_names = [t["function"]["name"] for t in tool_schemas
+                              if t["function"]["name"] != "get_current_datetime"]
+                hint_parts = []
+                if current_dt:
+                    hint_parts.append(f"\n\n[СИСТЕМНЫЙ ФАКТ] Текущая дата и время: {current_dt}")
+                hint_parts.append(
+                    f"\nДОСТУПНЫЕ ИНСТРУМЕНТЫ: {', '.join(tool_names)}.\n"
+                    "Используй web_search когда: пользователь просит найти в интернете, "
+                    "спрашивает о новостях/релизах/ценах/событиях после августа 2025, "
+                    "или когда не уверен в актуальности факта. "
+                    "Не отвечай из памяти по фактам которые могли измениться.\n"
+                    "Используй create_issue когда: пользователь просит создать issue/задачу в GitHub. "
+                    "Для create_issue обязательно передай: owner (владелец репо), repo (имя репо), "
+                    "title (заголовок), body (описание). "
+                    "Репозиторий пользователя по умолчанию: owner='vladislav', repo='AIAdventChallange' "
+                    "(если пользователь не уточнил другой)."
+                )
+                hint = "".join(hint_parts)
+                all_messages[0] = {**all_messages[0], "content": all_messages[0]["content"] + hint}
+
+                # Remove get_current_datetime from tool_schemas — handled above
+                tool_schemas_for_llm = [t for t in tool_schemas
+                                        if t["function"]["name"] != "get_current_datetime"]
                 tool_response = agent.provider.client.chat.completions.create(
                     model=agent.model,
                     messages=all_messages,
-                    tools=tool_schemas,
-                    tool_choice="auto",
+                    tools=tool_schemas_for_llm or None,
+                    tool_choice="auto" if tool_schemas_for_llm else "none",
                 )
                 choice = tool_response.choices[0]
 
-                if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-                    tool_used = True
-                    extra_messages = list(all_messages)
-                    # Append assistant message with tool_calls
+                # ── Multi-step tool loop (max MAX_TOOL_ROUNDS iterations) ──
+                MAX_TOOL_ROUNDS = 6
+                tool_used = True
+                extra_messages = list(all_messages)
+
+                for _round in range(MAX_TOOL_ROUNDS):
+                    if _round == 0:
+                        # Reuse the already-made first call
+                        cur_choice = choice
+                    else:
+                        tool_resp_n = agent.provider.client.chat.completions.create(
+                            model=agent.model,
+                            messages=extra_messages,
+                            tools=tool_schemas_for_llm or None,
+                            tool_choice="auto" if tool_schemas_for_llm else "none",
+                        )
+                        cur_choice = tool_resp_n.choices[0]
+
+                    if cur_choice.finish_reason != "tool_calls" or not cur_choice.message.tool_calls:
+                        # LLM has final answer — stream it
+                        chunk_iter_f, ref_f = agent.provider.chat_stream_with_stats(
+                            extra_messages, agent.model
+                        )
+                        full_response = ""
+                        for chunk in chunk_iter_f:
+                            full_response += chunk
+                            yield _sse_event("chunk", {"text": chunk})
+                        agent.memory.add_message("user", req.message)
+                        agent.memory.add_message("assistant", full_response)
+                        usage = ref_f.usage
+                        agent.session_stats.add(usage)
+                        break
+
+                    # Execute all tool calls in this round
                     extra_messages.append({
                         "role": "assistant",
-                        "content": choice.message.content,
+                        "content": cur_choice.message.content,
                         "tool_calls": [
                             {
                                 "id": tc.id,
@@ -111,41 +348,28 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                                     "arguments": tc.function.arguments,
                                 },
                             }
-                            for tc in choice.message.tool_calls
+                            for tc in cur_choice.message.tool_calls
                         ],
                     })
 
-                    for tc in choice.message.tool_calls:
-                        name = tc.function.name
-                        args = json.loads(tc.function.arguments or "{}")
-                        label = TOOL_LABELS.get(name, f"⚙️ {name}...")
+                    for tc in cur_choice.message.tool_calls:
+                        tc_name = tc.function.name
+                        tc_args = json.loads(tc.function.arguments or "{}")
+                        tc_label = TOOL_LABELS.get(tc_name, f"⚙️ {tc_name}...")
 
-                        yield _sse_event("tool_start", {"name": name, "label": label})
+                        yield _sse_event("tool_start", {"name": tc_name, "label": tc_label})
                         try:
-                            result = call_tool_sync(name, args)
+                            tc_result = call_tool_sync(tc_name, tc_args)
                         except Exception as e:
-                            result = f"Tool error: {e}"
-                        yield _sse_event("tool_done", {"name": name, "result_preview": result[:100]})
+                            tc_result = f"Tool error: {e}"
+                        yield _sse_event("tool_done", {"name": tc_name, "result_preview": tc_result[:100]})
 
                         extra_messages.append({
                             "role": "tool",
                             "tool_call_id": tc.id,
-                            "content": result,
+                            "content": tc_result,
                         })
-
-                    # Stream final response with tool results in context
-                    chunk_iter2, ref2 = agent.provider.chat_stream_with_stats(
-                        extra_messages, agent.model
-                    )
-                    full_response = ""
-                    for chunk in chunk_iter2:
-                        full_response += chunk
-                        yield _sse_event("chunk", {"text": chunk})
-
-                    agent.memory.add_message("user", req.message)
-                    agent.memory.add_message("assistant", full_response)
-                    usage = ref2.usage
-                    agent.session_stats.add(usage)
+                    # Continue loop — LLM will see results and decide next step
             except Exception:
                 # Tools failed — fall through to normal response
                 tool_used = False

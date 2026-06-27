@@ -1,0 +1,7 @@
+{
+  "short_term_limit": 16,
+  "keep_recent": 8,
+  "default_model": "openai/gpt-4o-mini",
+  "auto_profile_update": false,
+  "theme": "system"
+}

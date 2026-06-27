@@ -19,7 +19,36 @@ const SLASH_COMMANDS = [
   { cmd: '/invariants', desc: 'Управление инвариантами', usage: '/invariants list|add <текст>' },
   { cmd: '/memory', desc: 'Показать слои памяти', usage: '/memory' },
   { cmd: '/help', desc: 'Список команд', usage: '/help' },
+  { cmd: '/mcp', desc: 'Список MCP-инструментов на VPS', usage: '/mcp' },
+  { cmd: '/ping', desc: 'Live мониторинг цены (акция или индекс)', usage: '/ping IMOEX [сек]' },
+  { cmd: '/history', desc: 'Сводка из SQLite за N минут (24/7 сбор)', usage: '/history IMOEX [минуты]' },
 ]
+
+// Ping sub-suggestions: tickers + indices
+const PING_TICKERS = [
+  { value: 'IMOEX', desc: 'Индекс МосБиржи (~2240 пунктов)', icon: '📊' },
+  { value: 'RTSI',  desc: 'Индекс РТС (в USD)',               icon: '💵' },
+  { value: 'SBER',  desc: 'Сбербанк',                         icon: '🏦' },
+  { value: 'GAZP',  desc: 'Газпром',                          icon: '⛽' },
+  { value: 'YNDX',  desc: 'Яндекс',                           icon: '🔍' },
+  { value: 'LKOH',  desc: 'ЛУКОЙЛ',                           icon: '🛢️' },
+  { value: 'MOEX',  desc: 'Акции Мосбиржи',                   icon: '🏛️' },
+  { value: 'TCSG',  desc: 'Т-Банк (Тинькофф)',                icon: '💳' },
+]
+
+const PING_INTERVALS = [
+  { value: '3',  desc: 'каждые 3 сек (быстро)' },
+  { value: '5',  desc: 'каждые 5 сек (по умолчанию)' },
+  { value: '10', desc: 'каждые 10 сек (медленно)' },
+]
+
+const HISTORY_PERIODS = [
+  { value: '30',  desc: 'последние 30 мин' },
+  { value: '60',  desc: 'последний час' },
+  { value: '120', desc: 'последние 2 часа' },
+  { value: '480', desc: 'последние 8 часов' },
+]
+
 
 export default function ChatInput() {
   const [text, setText] = useState('')
@@ -31,6 +60,7 @@ export default function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const activeSessionId = useAppStore((s) => s.activeSessionId)
   const activeAgentId = useAppStore((s) => s.activeAgentId)
@@ -45,14 +75,50 @@ export default function ChatInput() {
   const isStreaming = useChatStore((s) => s.isStreaming)
   const { addMessage, appendChunk, finalizeMessage, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
 
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false)
+  }, [setStreaming])
+
   // Filter commands by typed prefix
   const filteredCmds = SLASH_COMMANDS.filter((c) =>
     text.startsWith('/') && c.cmd.startsWith(text.split(' ')[0])
   )
 
+  // Ping sub-suggestion state
+  const _pingParts = text.trim().split(/\s+/)
+  const isPingCmd = _pingParts[0] === '/ping'
+  const pingHasSpace = text.startsWith('/ping ')
+  const pingTickerRaw = _pingParts[1]?.toUpperCase() ?? ''
+  const pingTickerMatch = PING_TICKERS.find(t => t.value === pingTickerRaw)
+  const pingShowTickers = isPingCmd && pingHasSpace && !pingTickerMatch
+  const pingShowInterval = isPingCmd && !!pingTickerMatch && _pingParts.length < 3
+  const filteredPingTickers = pingShowTickers
+    ? PING_TICKERS.filter(t => t.value.startsWith(pingTickerRaw))
+    : []
+
+  // History sub-suggestion state (same pattern as ping)
+  const _histParts = text.trim().split(/\s+/)
+  const isHistCmd = _histParts[0] === '/history'
+  const histHasSpace = text.startsWith('/history ')
+  const histTickerRaw = _histParts[1]?.toUpperCase() ?? ''
+  const histTickerMatch = PING_TICKERS.find(t => t.value === histTickerRaw)
+  const histShowTickers = isHistCmd && histHasSpace && !histTickerMatch
+  const histShowPeriod = isHistCmd && !!histTickerMatch && _histParts.length < 3
+  const filteredHistTickers = histShowTickers
+    ? PING_TICKERS.filter(t => t.value.startsWith(histTickerRaw))
+    : []
+
   useEffect(() => {
     if (text.startsWith('/')) {
-      setShowCommands(filteredCmds.length > 0)
+      setShowCommands(
+        filteredCmds.length > 0 ||
+        filteredPingTickers.length > 0 ||
+        pingShowInterval ||
+        filteredHistTickers.length > 0 ||
+        histShowPeriod
+      )
     } else {
       setShowCommands(false)
     }
@@ -265,6 +331,8 @@ export default function ChatInput() {
     clearImage()
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
+    const apiMsg = msg
+
     const userId = crypto.randomUUID()
     addMessage({ id: userId, role: 'user', content: msg, imagePreview: sentImage ?? undefined })
 
@@ -272,19 +340,23 @@ export default function ChatInput() {
     addMessage({ id: assistantId, role: 'assistant', content: '', streaming: true })
     setStreaming(true)
 
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     await streamChat(
       activeSessionId,
-      msg || '📎',
+      apiMsg || '📎',
       {
         onChunk: (t) => appendChunk(assistantId, t),
         onUsage: (u) => { finalizeMessage(assistantId, u); addCost(u) },
         onViolation: (inv, desc) => setViolation({ invariant: inv, desc }),
         onToolStart: (_, label) => setToolStatus(label),
         onToolDone: () => setToolStatus(null),
-        onDone: () => { setToolStatus(null); setStreaming(false) },
+        onDone: () => { setToolStatus(null); setStreaming(false); abortRef.current = null },
         onError: (e) => {
           finalizeMessage(assistantId, { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost_rub: 0, elapsed_ms: 0 })
           setStreaming(false)
+          abortRef.current = null
           console.error(e)
         },
       },
@@ -292,6 +364,7 @@ export default function ChatInput() {
       activeAgentPersona || undefined,
       activeModel || undefined,
       activeProfileName || undefined,
+      ctrl.signal,
     )
   }, [text, imageB64, imagePreview, isStreaming, activeSessionId, activeAgentPersona, activeModel,
       activeProfileName, executeCommand, addMessage, appendChunk, finalizeMessage, setStreaming, addCost, setViolation, setToolStatus])
@@ -319,7 +392,94 @@ export default function ChatInput() {
             marginBottom: 8, borderRadius: 12, overflow: 'hidden', zIndex: 50,
           }}
         >
-          {filteredCmds.map((c) => (
+          {/* /ping TICKER suggestions */}
+          {filteredPingTickers.length > 0 && (
+            <>
+              <div style={{ padding: '6px 14px 4px', fontSize: 11, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                /ping — выбери тикер или индекс:
+              </div>
+              {filteredPingTickers.map((t) => (
+                <div
+                  key={t.value}
+                  onClick={() => { setText(`/ping ${t.value} `); setShowCommands(false); textareaRef.current?.focus() }}
+                  style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 8, transition: 'background 0.1s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: 13 }}>{t.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--accent)', flexShrink: 0 }}>{t.value}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.desc}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* /ping TICKER [interval] suggestions */}
+          {pingShowInterval && (
+            <>
+              <div style={{ padding: '6px 14px 4px', fontSize: 11, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                /ping {pingTickerRaw} — выбери интервал (сек):
+              </div>
+              {PING_INTERVALS.map((iv) => (
+                <div
+                  key={iv.value}
+                  onClick={() => { setText(`/ping ${pingTickerRaw} ${iv.value}`); setShowCommands(false); textareaRef.current?.focus() }}
+                  style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 8, transition: 'background 0.1s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--accent)', flexShrink: 0 }}>{iv.value}с</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{iv.desc}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* /history TICKER suggestions */}
+          {filteredHistTickers.length > 0 && (
+            <>
+              <div style={{ padding: '6px 14px 4px', fontSize: 11, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                /history — выбери тикер или индекс:
+              </div>
+              {filteredHistTickers.map((t) => (
+                <div
+                  key={t.value}
+                  onClick={() => { setText(`/history ${t.value} `); setShowCommands(false); textareaRef.current?.focus() }}
+                  style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 8, transition: 'background 0.1s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: 13 }}>{t.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--accent)', flexShrink: 0 }}>{t.value}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.desc}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* /history TICKER [period] suggestions */}
+          {histShowPeriod && (
+            <>
+              <div style={{ padding: '6px 14px 4px', fontSize: 11, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+                /history {histTickerRaw} — выбери период:
+              </div>
+              {HISTORY_PERIODS.map((p) => (
+                <div
+                  key={p.value}
+                  onClick={() => { setText(`/history ${histTickerRaw} ${p.value}`); setShowCommands(false); textareaRef.current?.focus() }}
+                  style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 8, transition: 'background 0.1s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: 'var(--accent)', flexShrink: 0 }}>{p.value} мин</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.desc}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Regular slash commands (only when not in ping/history sub-mode) */}
+          {!pingShowTickers && !pingShowInterval && !histShowTickers && !histShowPeriod && filteredCmds.map((c) => (
             <div
               key={c.cmd}
               onClick={() => { setText(c.cmd + ' '); setShowCommands(false); textareaRef.current?.focus() }}
@@ -417,21 +577,41 @@ export default function ChatInput() {
           }}
         />
 
-        <button onClick={send} disabled={!canSend}
-          style={{
-            width: 34, height: 34, borderRadius: '50%',
-            background: canSend ? 'var(--accent)' : 'var(--bg-surface)',
-            color: canSend ? '#fff' : 'var(--text-tertiary)',
-            cursor: canSend ? 'pointer' : 'not-allowed',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0, transition: 'all 0.15s',
-            border: canSend ? 'none' : '1px solid var(--border)',
-          } as React.CSSProperties}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 19V5M5 12l7-7 7 7" />
-          </svg>
-        </button>
+        {isStreaming ? (
+          /* Stop button — shown during streaming */
+          <button
+            onClick={stopStreaming}
+            title="Остановить"
+            style={{
+              width: 34, height: 34, borderRadius: 8,
+              background: 'var(--accent)', color: '#fff',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'all 0.15s', border: 'none',
+            } as React.CSSProperties}
+          >
+            {/* Square stop icon */}
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <rect x="1" y="1" width="10" height="10" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          /* Send button */
+          <button onClick={send} disabled={!canSend}
+            style={{
+              width: 34, height: 34, borderRadius: '50%',
+              background: canSend ? 'var(--accent)' : 'var(--bg-surface)',
+              color: canSend ? '#fff' : 'var(--text-tertiary)',
+              cursor: canSend ? 'pointer' : 'not-allowed',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'all 0.15s',
+              border: canSend ? 'none' : '1px solid var(--border)',
+            } as React.CSSProperties}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          </button>
+        )}
       </div>
       <div style={{ textAlign: 'center', marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
         Enter — отправить · Shift+Enter — новая строка · / — команды

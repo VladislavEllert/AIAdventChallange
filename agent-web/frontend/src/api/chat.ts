@@ -26,11 +26,13 @@ export async function streamChat(
   persona?: string,
   model?: string,
   profile_name?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const resp = await fetch(`${BASE}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id, message, image_b64, persona, model, profile_name }),
+    signal,
   })
 
   if (!resp.ok || !resp.body) {
@@ -42,6 +44,7 @@ export async function streamChat(
   const dec = new TextDecoder()
   let buf = ''
 
+  try {
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
@@ -67,5 +70,13 @@ export async function streamChat(
         event = ''
       }
     }
+  }
+  } catch (e: unknown) {
+    // AbortError = user cancelled — not a real error
+    if (e instanceof Error && e.name !== 'AbortError') {
+      callbacks.onError(e)
+    }
+  } finally {
+    callbacks.onDone()
   }
 }
