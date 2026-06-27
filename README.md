@@ -47,6 +47,7 @@
 | 04 | 17 | MCP: agent-web интегрирует tools (tool_start/tool_done SSE), web_search + get_moex_quote → живые ответы | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
 | 04 | 18 | MCP: APScheduler кэш MOEX каждые 30 сек, get_moex_history SQLite, /history команда | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
 | 04 | 19 | MCP Composition: get_crypto_klines → calculate_indicators (RSI/MACD) → save_report — гарантированный пайплайн | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
+| 04 | 20 | MCP Orchestration: два сервера (VPS финансы 8001 + GitHub 8003), роутинг по реестру, цепочка 4 тула 2 сервера | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
 
 ## Приложение AgentChat (неделя 2)
 
