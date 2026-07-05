@@ -1,453 +1,488 @@
-# Оценка RAG — День 25: Task Memory + диалог с историей
+# RAG Evaluation — Day 25: Task Memory + Multi-turn
 
-Модель: `openai/gpt-4o-mini` | Индекс: fixed | threshold=0.5 | top_k=5 | query_rewrite=ON
-
----
-
-## Сценарий: Онбординг нового сотрудника
-
-**Источники найдены:** 10/10 ходов (✅ ВСЕ)
-
-**Исходная цель:** _Узнать, что нужно знать перед выходом на работу в GitLab на следующей неделе._
-
-**Итоговая цель:** _Понять предпочтения GitLab в отношении асинхронной vs синхронной коммуникации._
-
-### Ход 1: Я начинаю работать в GitLab на следующей неделе. Что мне нужно знать в первую очередь?
-
-**RAG:** score=0.699 | источники=✅
-
-**Переформулировано:** _Какую важную информацию мне необходимо изучить перед выходом на работу в GitLab на следующей неделе?_
-
-**Ответ:**
-На основе доступной информации вот что вам стоит знать в начале работы в GitLab:
-
-1. **Обучение и развитие:** GitLab предлагает возможности для роста, включая официальную программу коучинга. Вы также можете вступить в группу наставничества women's TMRG — в качестве наставника или подопечного. Рассмотрите программу job shadowing для знакомства с разными ролями.
-
-2. **Коммуникация:** Важно обеспечивать ясность при обсуждении деликатных тем. Помните, что всё сказанное на публичных форумах может быть видно внешней аудитории и должно отражать ценности GitLab.
-
-3. **Представительство:** Как представитель GitLab вы можете получать запросы от третьих сторон на выступления. Изучите соответствующие руководства.
-
-4. **Ценности GitLab:** Освойте основные ценности компании — они определяют культуру и взаимодействие внутри команды.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/leadership/
-- https://handbook.gitlab.com/handbook/communication/
-- https://handbook.gitlab.com/handbook/hiring/
+Model: `openai/gpt-4o-mini` | Index: fixed | threshold=0.5 | top_k=5 | query_rewrite=ON
 
 ---
 
-### Ход 2: Каковы основные ценности GitLab?
+## Scenario: New employee onboarding
 
-**RAG:** score=0.757 | источники=✅
+**Sources present:** 9/10 turns (⚠️ PARTIAL)
 
-**Переформулировано:** _Каковы фундаментальные принципы и основные ценности, определяющие организационную культуру GitLab?_
+**Initial goal extracted:** _успешное начало работы в GitLab_
 
-**Состояние задачи:**
-- Цель: Узнать, что нужно знать перед выходом на работу в GitLab на следующей неделе.
-- Уточнено: Выхожу в GitLab на следующей неделе.; GitLab предлагает возможности обучения и развития.; Коммуникация имеет ключевое значение, особенно по деликатным темам.
+**Final goal:** _успешное начало работы в GitLab_
 
-**Ответ:**
-Шесть основных ценностей GitLab:
+### Turn 1: I'm starting at GitLab next week. What should I know first?
 
-1. **🤝 Collaboration (Сотрудничество)**
-2. **📈 Results for Customers (Результаты для клиентов)**
-3. **⏱️ Efficiency (Эффективность)**
-4. **🌐 Diversity, Inclusion & Belonging (Разнообразие, инклюзивность и принадлежность)**
-5. **👣 Iteration (Итерация)**
-6. **👁️ Transparency (Прозрачность)**
+**RAG:** score=0.707 | sources=❌
 
-Их можно запомнить по акрониму **CREDIT** — кредит доверия, который члены команды оказывают друг другу, предполагая добрые намерения.
+**Rewritten:** _What are the essential things I should learn before starting my new job at GitLab next week?_
 
-**Источники:**
+**Answer:**
+I don't know.
+
+---
+
+### Turn 2: What are GitLab's core values?
+
+**RAG:** score=0.745 | sources=✅
+
+**Rewritten:** _What are the fundamental principles and core values that guide GitLab as an organization?_
+
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе
+
+**Answer:**
+GitLab's six core values are:
+
+1. **🤝 Collaboration**
+2. **📈 Results for Customers**
+3. **⏱️ Efficiency**
+4. **🌐 Diversity, Inclusion & Belonging**
+5. **👣 Iteration**
+6. **👁️ Transparency**
+
+These values collectively spell the acronym **CREDIT**, which reflects the culture and principles that guide interactions within the company.
+
+**Sources:** 
 - https://handbook.gitlab.com/handbook/values/
 
 ---
 
-### Ход 3: Как работает удалённая коммуникация в GitLab?
+### Turn 3: How does remote communication work at GitLab?
 
-**RAG:** score=0.762 | источники=✅
+**RAG:** score=0.752 | sources=✅
 
-**Переформулировано:** _Какие механизмы и стратегии используются для удалённой коммуникации в GitLab?_
+**Rewritten:** _What are the specific methods and tools utilized for remote communication within GitLab?_
 
-**Состояние задачи:**
-- Цель: Узнать об основных ценностях GitLab.
-- Уточнено: GitLab имеет шесть основных ценностей.; Ценности представлены акронимом «CREDIT».
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab
 
-**Ответ:**
-Удалённая коммуникация в GitLab строится на принципах ясной асинхронной коммуникации:
+**Answer:**
+At GitLab, clear communication is essential due to its all-remote structure. The company practices asynchronous communication to help everyone stay connected and work more efficiently, given that team members are located in various places around the world. To facilitate effective collaboration, GitLab encourages using tools like Slack instead of relying heavily on email, promoting informal interactions to build social relationships, and ensuring that communications are transparent and aligned with the company's core values. 
 
-1. **Асинхронная коммуникация:** GitLab полностью удалённая компания и полагается на асинхронные методы для эффективного взаимодействия независимо от местонахождения.
-2. **Ясность и эффективность:** Чёткая коммуникация необходима для эффективной работы. Участники команды должны формулировать свои мысли так, чтобы минимизировать недопонимание.
-3. **Публичные обсуждения:** Обсуждая деликатные темы, нужно помнить, что всё написанное может быть видно внешней аудитории.
-4. **Неформальная коммуникация:** GitLab поощряет неформальное общение для укрепления социальных связей.
-5. **Прозрачность:** Стиль коммуникации в GitLab должен способствовать двустороннему диалогу, где обратная связь приветствуется.
+Additionally, team members have opportunities to engage with external parties by sharing their expertise, which is also handled with careful consideration for personal data and the company's image.
 
-**Источники:**
+**Sources:** 
 - https://handbook.gitlab.com/handbook/communication/
 
 ---
 
-### Ход 4: Какова политика по отгулам? Сколько дней мне положено?
+### Turn 4: What is the time-off policy? How many days do I get?
 
-**RAG:** score=0.715 | источники=✅
+**RAG:** score=0.710 | sources=✅
 
-**Переформулировано:** _Каковы условия политики оплачиваемого отпуска на моём рабочем месте и сколько дней отпуска мне полагается в год?_
+**Rewritten:** _What are the details of the time-off policy, and how many days of leave or vacation am I entitled to receive?_
 
-**Состояние задачи:**
-- Цель: Понять удалённую коммуникацию в GitLab
-- Уточнено: GitLab использует асинхронные методы коммуникации.; Чёткая коммуникация минимизирует недопонимание.; Публичные обсуждения должны отражать ценности компании.
-- Ограничения: Коммуникация должна быть чёткой и эффективной.; Деликатные темы требуют осторожного обращения.; Обратная связь должна цениться и быть реалистичной.
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab
 
-**Ответ:**
-GitLab использует гибкую политику оплачиваемого отпуска (Flexible PTO), позволяющую брать отгулы для личных нужд, отдыха, путешествий или ухода за близкими. Конкретно: предусмотрен эквивалент 25 полных рабочих дней отпуска в год, если иное не установлено применимым законодательством.
+**Answer:**
+GitLab has a Flexible Paid Time Off (PTO) policy, which allows team members to use their time off for personal obligations, rest, vacations, or any other necessary time away. The specific number of days you can take varies based on your role, location, and any other applicable benefits or agreements. For detailed information regarding the time-off policy as it pertains to your specific situation or location, it's best to consult the GitLab handbook or your HR representative.
 
-Кроме того, политика отгулов GitLab включает: государственные праздники, больничные, отпуск по уходу, отпуск в связи с потерей близкого, волонтёрский отпуск и отпуск по гражданским обязательствам (например, служба в суде присяжных). Рекомендуется ознакомиться со страницами политики для конкретной локации.
-
-**Источники:**
+**Sources:** 
 - https://handbook.gitlab.com/handbook/people-group/time-off-and-absence/time-off-types/
 
 ---
 
-### Ход 5: Могу ли я взять отпуск по уходу за ребёнком?
+### Turn 5: Can I take parental leave?
 
-**RAG:** score=0.750 | источники=✅
+**RAG:** score=0.746 | sources=✅
 
-**Переформулировано:** _Имею ли я право на отпуск по уходу за ребёнком и каковы требования и процедуры?_
+**Rewritten:** _Am I eligible to take parental leave? What are the requirements and policies regarding parental leave?_
 
-**Состояние задачи:**
-- Цель: Понять политику GitLab по отгулам и количество предоставляемых дней.
-- Уточнено: GitLab использует гибкую политику PTO.; Сотрудникам предоставляется 25 полных рабочих дней в год.; Политика включает государственные праздники, больничные и другие виды отпусков.
-- Ограничения: Отпуск берётся гибко в соответствии с индивидуальными потребностями.; Могут применяться локальные вариации.
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab
 
-**Ответ:**
-Да, GitLab предоставляет оплачиваемый отпуск по уходу за ребёнком для любого активного члена команды, ставшего родителем через рождение ребёнка или усыновление. Отпуск доступен вне зависимости от пола и составляет 16 недель оплачиваемого отдыха. Чтобы начать процесс, необходимо подать заявку через Tilt (доступно через Okta) примерно за 30–45 дней до начала отпуска. Также рекомендуется уведомить менеджера за 2–3 месяца для планирования нагрузки.
+**Answer:**
+Yes, you can take parental leave at GitLab if you are an active team member who becomes a parent through childbirth or adoption. GitLab offers a 16-week paid parental leave policy that is available to all eligible employees, regardless of gender. You should check specific details or statutory benefits applicable to your location, as they may vary.
 
-**Источники:**
+**Sources:**
 - https://handbook.gitlab.com/handbook/people-group/time-off-and-absence/leave-types/
 
 ---
 
-### Ход 6: Я senior-инженер. Как выглядит процесс code review?
+### Turn 6: I'm a senior engineer. What's the code review process?
 
-**RAG:** score=0.743 | источники=✅
+**RAG:** score=0.771 | sources=✅
 
-**Переформулировано:** _Каковы шаги процесса code review для senior-инженера?_
+**Rewritten:** _What are the steps and best practices involved in the code review process for software engineering?_
 
-**Состояние задачи:**
-- Цель: Узнать о политике отпуска по уходу за ребёнком в GitLab
-- Уточнено: GitLab предоставляет оплачиваемый отпуск по уходу за ребёнком через рождение или усыновление.; Отпуск составляет 16 недель и доступен вне зависимости от пола.
-- Ограничения: Подать заявку за 30–45 дней до отпуска.; Уведомить менеджера за 2–3 месяца.
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab; пользователь спрашивал про политику отпусков в GitLab
 
-**Ответ:**
-Как senior-инженеру в GitLab вам необходимо знать следующее:
+**Answer:**
+As a senior engineer at GitLab, the code review process involves several key steps:
 
-1. **Обязательное ревью:** Code review обязателен для каждого MR. Ознакомьтесь с [Code Review Guidelines](https://docs.gitlab.com/ee/development/code_review.html).
+1. **Mandatory Code Reviews**: Every merge request (MR) requires a code review as per GitLab's policies. Familiarize yourself with the [Code Review Guidelines](https://docs.gitlab.com/ee/development/code_review.html) to understand the expectations and procedures.
 
-2. **Обязанности ревьюера:** Вы должны давать обратную связь в рамках SLO. Если не успеваете, уведомите автора как можно раньше (не позднее чем через 36 часов) и помогите найти другого ревьюера.
+2. **Review Responsibilities**: Identify who needs to review, approve, and merge your merge request, as well as the SLOs (Service Level Objectives) for review response times. Ensure that you communicate any changes or feedback with the reviewers promptly.
 
-3. **Trainee Maintainer:** Новым senior-инженерам рекомендуется стать trainee maintainer в процессе онбординга (ожидается в течение 12 месяцев). Те, кто переходит на Senior-уровень, должны уже иметь статус мейнтейнера.
+3. **Reviewer Values**: As a reviewer, strive to maintain the quality and maintainability of the codebase while fostering a supportive and respectful environment. Balance iteration with quality concerns, ensuring that the changes contribute positively to the user experience and reliability.
 
-4. **Статус мейнтейнера:** Включает регулярную оценку готовности ревьюера. Комментарии и обратную связь по вопросам квалификации следует обсуждать с менеджером или ментором.
+4. **Communication and Feedback**: If you cannot review an MR within the designated time frame, inform the author as soon as possible (preferably within 36 hours) and assist them in finding another reviewer. Use comments and status emojis to communicate effectively.
 
-5. **Обратная связь и рост:** Используйте встречи один на один для устранения пробелов перед повторной подачей на статус мейнтейнера.
+5. **Constructive Feedback**: Provide constructive feedback focused on maintaining high-quality standards, and be open to discussions that may arise during the review process.
 
-**Источники:**
+Following these steps will help ensure an efficient and collaborative code review process at GitLab.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
+- https://handbook.gitlab.com/handbook/engineering/workflow/reviewer-values/
+
+---
+
+### Turn 7: How long should a code review typically take?
+
+**RAG:** score=0.694 | sources=✅
+
+**Rewritten:** _What is the typical duration for a code review process?_
+
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab; пользователь спрашивал про политику отпусков в GitLab
+
+**Answer:**
+The typical time frame for a code review at GitLab, known as the review-response SLO (Service Level Objective), emphasizes that reviewers should respond to a merge request within 36 hours of first receiving the review request. This timeframe helps ensure that authors are not blocked in their work and can continue making progress as quickly as possible.
+
+**Sources:**
 - https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
 
 ---
 
-### Ход 7: Сколько обычно занимает code review?
+### Turn 8: What happens if I disagree with a reviewer's feedback?
 
-**RAG:** score=0.696 | источники=✅
+**RAG:** score=0.673 | sources=✅
 
-**Переформулировано:** _Какова типичная продолжительность процесса code review в разработке ПО?_
+**Rewritten:** _What are the potential outcomes or consequences of not agreeing with the feedback provided by a reviewer?_
 
-**Состояние задачи:**
-- Цель: Понять процесс code review как senior-инженер.
-- Уточнено: Code review обязателен для каждого MR.; Ревьюеры должны давать обратную связь в рамках SLO.; Новым senior-инженерам следует стать trainee maintainer.
-- Ограничения: Завершить ревью в течение 36 часов или уведомить автора.; Обсуждать обратную связь на встречах один на один.
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab; пользователь спрашивал про политику отпусков в GitLab
 
-**Ответ:**
-Code review должен быть завершён в течение 36 часов после получения запроса ревьюером. Если ревьюер не может уложиться в этот срок, он должен уведомить автора как можно раньше и помочь найти другого ревьюера, чтобы не блокировать работу автора.
+**Answer:**
+If you disagree with a reviewer's feedback at GitLab, it's important to approach the situation thoughtfully and constructively. You can express your concerns and engage in a discussion with the reviewer. Maintain a respectful tone and focus on understanding their perspective while clearly articulating your viewpoint.
 
-**Источники:**
-- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
+The process encourages open communication and collaboration, allowing for differences in opinion. If necessary, you may also seek input from other team members or senior engineers to help mediate the discussion or provide additional insights.
 
----
+Ultimately, once a decision has been made, all team members are expected to commit to executing that decision, even if they disagreed initially. Past decisions can be questioned, but during the execution of a project, collaboration and commitment are crucial.
 
-### Ход 8: Что делать, если я не согласен с замечанием ревьюера?
-
-**RAG:** score=0.683 | источники=✅
-
-**Переформулировано:** _Каковы возможные последствия или лучшие практики, если я не согласен с замечанием ревьюера к моей работе?_
-
-**Состояние задачи:**
-- Цель: Понять процесс code review и его продолжительность.
-- Уточнено: Code review обязателен для каждого MR.; Ревью должно быть завершено в течение 36 часов.; Ревьюеры должны уведомлять авторов при невозможности уложиться в срок.
-- Ограничения: Ревьюеры должны помогать найти замену при недоступности.; Обратная связь должна быть конструктивной и своевременной.
-
-**Ответ:**
-Если вы не согласны с замечанием ревьюера в GitLab, важно подойти к ситуации обдуманно:
-
-1. **Оставайтесь объективными:** Не переходите в оборону. Обратная связь — это помощь в улучшении работы.
-2. **Конструктивное взаимодействие:** Вместо того чтобы отвергать замечание, постарайтесь понять точку зрения ревьюера.
-3. **Уважительная коммуникация:** Объясните свою позицию спокойно и чётко, приводя обоснования.
-4. **Отложите решение при необходимости:** Допустимо взять время на осмысление обратной связи перед ответом.
-5. **Фокус на сотрудничестве:** Стремитесь к совместному решению — доработке кода, предоставлению дополнительного контекста или компромиссу.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/leadership/
-
----
-
-### Ход 9: Есть ли предпочтение асинхронной vs синхронной коммуникации?
-
-**RAG:** score=0.682 | источники=✅
-
-**Переформулировано:** _Каковы преимущества и недостатки асинхронной vs синхронной коммуникации и есть ли предпочтение одного метода в профессиональной среде?_
-
-**Состояние задачи:**
-- Цель: Понять процесс code review и способы работы с разногласиями.
-- Уточнено: Code review обязателен для каждого MR.; Ревью должно быть завершено в течение 36 часов.; Конструктивно взаимодействуйте при несогласии с обратной связью.
-- Ограничения: Уведомляйте автора, если не успеваете сделать ревью в срок.; Сохраняйте профессионализм при разногласиях.
-
-**Ответ:**
-Да, в GitLab есть предпочтение асинхронной (async) коммуникации во многих ситуациях. Handbook подчёркивает преимущества async: обсуждения могут происходить постепенно, несколько участников могут вносить вклад без ограничений запланированного видеозвонка, а обсуждения можно возвращаться к ним при необходимости. В отличие от этого, синхронная (sync) коммуникация ограничена временем и доступностью участников.
-
-Асинхронная коммуникация часто более эффективна, так как позволяет продолжающиеся дискуссии без необходимости согласования расписания. Поэтому использование async-каналов поощряется для вопросов, не требующих немедленного решения.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/communication/
-
----
-
-### Ход 10: Подведи итог ключевым вещам, которые мне нужно знать как новому сотруднику GitLab
-
-**RAG:** score=0.709 | источники=✅
-
-**Переформулировано:** _Не могли бы вы обобщить основную информацию, которую мне необходимо знать как новому сотруднику GitLab?_
-
-**Состояние задачи:**
-- Цель: Понять предпочтения GitLab в отношении async vs sync коммуникации.
-- Уточнено: GitLab предпочитает асинхронную коммуникацию.; Async позволяет вести непрерывные обсуждения.; Sync ограничена временем и доступностью.
-- Ограничения: Async поощряется для несрочных вопросов.
-
-**Ответ:**
-Как новому сотруднику GitLab важно понять несколько ключевых аспектов культуры и операций:
-
-1. **Предпочтение асинхронной коммуникации:** GitLab поощряет async-коммуникацию, позволяющую вести непрерывные обсуждения без ограничений по времени и доступности. Это поддерживает совместную работу и эффективное управление обсуждениями.
-
-2. **Процесс code review:** Code review обязателен для MR и должен завершаться в течение 36 часов. Обратную связь следует принимать конструктивно, при несогласии поощряется открытый диалог.
-
-3. **Talent Acquisition и видение команды:** Цель команды по подбору персонала — обеспечить возможность каждому вносить вклад в миссию GitLab.
-
-4. **Культура инклюзивности и результатов:** GitLab продвигает разнообразную и инклюзивную культуру рабочего места, поддерживая рост и карьерное развитие сотрудников. Фокус — на создании высокоэффективной среды.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/communication/
-- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
-- https://handbook.gitlab.com/handbook/hiring/
-- https://handbook.gitlab.com/handbook/people-group/
-
----
-
-## Сценарий: Карьерный рост инженера
-
-**Источники найдены:** 6/10 ходов (⚠️ ЧАСТИЧНО)
-
-**Исходная цель:** _Объяснить рабочий процесс разработки ПО в GitLab_
-
-**Итоговая цель:** _Понять возможности наставничества и обучения в GitLab_
-
-### Ход 1: Объясни рабочий процесс разработки ПО в GitLab
-
-**RAG:** score=0.750 | источники=✅
-
-**Переформулировано:** _Не могли бы вы подробно описать рабочий процесс разработки ПО, используемый в GitLab, включая процессы, методологии и инструменты?_
-
-**Ответ:**
-Рабочий процесс разработки ПО в GitLab построен преимущественно вокруг GitLab Flow — фреймворка, охватывающего как процесс разработки, так и управление задачами:
-
-1. **GitLab Flow** — основной фреймворк для создания продуктов GitLab: управление кодом, отслеживание фич и деплой обновлений.
-2. **Управление задачами** — эффективный трекинг issues для определения приоритетов и решения задач.
-3. **Code Review** — обязательный процесс проверки вклада перед слиянием в основную ветку.
-4. **Мониторинг и отчётность об ошибках** — Sentry для отчётности и Prometheus для алертов.
-5. **Планирование** — GitLab тщательно выбирает, над какими задачами работать в данный момент.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/engineering/workflow/
-- https://docs.gitlab.com/ee/development/contributing/
-- https://dashboards.gitlab.com/
-- https://sentry.gitlab.net/
-- https://prometheus.gitlab.com/alerts
-
----
-
-### Ход 2: Как обрабатываются и проверяются merge requests?
-
-**RAG:** score=0.708 | источники=✅
-
-**Переформулировано:** _Каковы процессы и процедуры управления и проверки merge requests в разработке ПО?_
-
-**Состояние задачи:**
-- Цель: Объяснить рабочий процесс разработки ПО в GitLab
-- Уточнено: GitLab Flow — основной фреймворк для разработки.; Управление задачами необходимо для отслеживания приоритетов.; Code review обязателен перед слиянием вклада.
-
-**Ответ:**
-Merge requests в GitLab обрабатываются через структурированный процесс code review, обязательный для каждого запроса:
-
-1. **Обязательное ревью** — каждый MR проходит code review для обеспечения качества.
-2. **Ревьюеры** — определяют, кто отвечает за ревью, одобрение и слияние.
-3. **Время ответа** — ревьюеры должны ответить в рамках SLO, уведомив автора в течение 36 часов при невозможности.
-4. **Поддержка и коммуникация** — если ревьюер не успевает, он помогает найти другого квалифицированного ревьюера. Эмодзи используются для передачи статуса.
-5. **Слияние** — мейнтейнеры отвечают за слияние одобренных изменений и управление пайплайнами.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
-- https://handbook.gitlab.com/handbook/engineering/workflow/
-
----
-
-### Ход 3: Каковы принципы инженерного менеджмента в GitLab?
-
-**RAG:** score=0.779 | источники=❌
-
-**Переформулировано:** _Каковы фундаментальные принципы инженерного менеджмента, применяемые в GitLab?_
-
-**Состояние задачи:**
-- Цель: Понять, как в GitLab обрабатываются и проверяются merge requests.
-- Уточнено: Merge requests требуют обязательного code review.; Для каждого MR назначаются ревьюеры.; Время ответа определяется SLO.
-- Ограничения: Ревью должно соответствовать Code Review Guidelines.; Ревьюеры должны отвечать в установленные сроки.
-
-**Ответ:**
-Не знаю.
-
----
-
-### Ход 4: Как работают ревью производительности для инженеров?
-
-**RAG:** score=0.680 | источники=❌
-
-**Переформулировано:** _Каков процесс проведения оценки производительности для инженеров?_
-
-**Состояние задачи:**
-- Цель: Понять принципы инженерного менеджмента в GitLab
-
-**Ответ:**
-Не знаю.
-
----
-
-### Ход 5: Каковы критерии повышения до senior-инженера?
-
-**RAG:** score=0.725 | источники=✅
-
-**Переформулировано:** _Каковы конкретные требования и квалификации, необходимые для повышения до должности Senior Engineer?_
-
-**Состояние задачи:**
-- Цель: Понять, как работают ревью производительности для инженеров в GitLab
-
-**Ответ:**
-Критерии повышения до Senior Engineer в GitLab включают ожидание того, что инженер уже стал мейнтейнером до момента повышения. Это означает, что человек принял на себя ответственность, соответствующую ожиданиям для Senior-роли, демонстрируя способность управлять вкладом и поддерживать стандарты качества кода в команде.
-
-**Источники:**
-- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
-
----
-
-### Ход 6: Как GitLab работает с недостаточно эффективными членами команды?
-
-**RAG:** score=0.705 | источники=❌
-
-**Переформулировано:** _Каким образом GitLab управляет сотрудниками, не соответствующими ожиданиям по производительности?_
-
-**Состояние задачи:**
-- Цель: Понять критерии повышения до senior-инженера в GitLab
-- Уточнено: Для повышения необходимо сначала стать мейнтейнером; Мейнтейнеры управляют вкладом и поддерживают качество кода
-
-**Ответ:**
-Не знаю.
-
----
-
-### Ход 7: Что ожидается от engineering manager vs individual contributor?
-
-**RAG:** score=0.652 | источники=❌
-
-**Переформулировано:** _Каковы ключевые обязанности и ожидания от engineering manager по сравнению с individual contributor?_
-
-**Состояние задачи:**
-- Цель: Понять, как GitLab работает с недостаточно эффективными членами команды.
-
-**Ответ:**
-Не знаю.
-
----
-
-### Ход 8: Как GitLab подходит к психологической безопасности и инклюзивности?
-
-**RAG:** score=0.757 | источники=✅
-
-**Переформулировано:** _Какие стратегии и практики GitLab реализует для обеспечения психологической безопасности и продвижения инклюзивности?_
-
-**Состояние задачи:**
-- Цель: Понять ожидания от engineering managers vs individual contributors.
-
-**Ответ:**
-GitLab подчёркивает важность создания безопасного сообщества, где каждый член команды имеет право чувствовать себя в безопасности. Компания не терпит жестокого обращения, харассмента, исключения, дискриминации или мести. Культура психологической безопасности поощряет открытую коммуникацию и обеспечивает возможность каждому высказываться без страха негативных последствий.
-
-Кроме того, менеджеры играют ключевую роль в создании психологически безопасной среды. Это включает предоставление разумных условий для удовлетворения разнообразных потребностей — подходящие инструменты и инклюзивная среда встреч.
-
-**Источники:**
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/reviewer-values/
 - https://handbook.gitlab.com/handbook/values/
+
+---
+
+### Turn 9: Is there a preference for async vs sync communication?
+
+**RAG:** score=0.666 | sources=✅
+
+**Rewritten:** _What are the advantages and disadvantages of asynchronous communication compared to synchronous communication, and is there a preference for one over the other in different contexts?_
+
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab; пользователь спрашивал про политику отпусков в GitLab
+
+**Answer:**
+Yes, GitLab emphasizes the importance of asynchronous (async) communication over synchronous (sync) communication for various reasons. Async communication allows for more inclusive conversations, as anyone can contribute at any time and discussions can proceed at a flexible pace. It is particularly advantageous for remote teams, as it accommodates different time zones and reduces the need for everyone to be present at the same time.
+
+Synchronous communication, such as video calls, can be limiting in terms of time and participation, whereas async conversations can start and stop as necessary, allowing for a more organized and thoughtful exchange of ideas.
+
+GitLab encourages clear communication practices that help teams stay connected and work efficiently, highlighting that async communication is often preferable in many contexts.
+
+**Sources:**
 - https://handbook.gitlab.com/handbook/communication/
 
 ---
 
-### Ход 9: Какие возможности наставничества и обучения предлагает GitLab?
+### Turn 10: Summarize the key things I told you I need to know as a new GitLab employee
 
-**RAG:** score=0.799 | источники=✅
+**RAG:** score=0.706 | sources=✅
 
-**Переформулировано:** _Какие конкретные программы наставничества или образовательные возможности GitLab предоставляет для повышения навыков и знаний?_
+**Rewritten:** _What are the essential pieces of information and key resources that I should be aware of as a new employee at GitLab?_
 
-**Состояние задачи:**
-- Цель: Понять подход GitLab к психологической безопасности и инклюзивности.
-- Уточнено: GitLab делает акцент на создании безопасного сообщества.; Нулевая терпимость к жестокому обращению, харассменту или дискриминации.; Поощряется открытая коммуникация.
+**Task state:**
+- Goal: успешное начало работы в GitLab
+- Clarified: пользователь начинает работать в GitLab на следующей неделе; спросил про основные ценности GitLab; пользователь спрашивал про политику отпусков в GitLab
 
-**Ответ:**
-GitLab предлагает несколько возможностей для наставничества и обучения:
+**Answer:**
+As a new employee at GitLab, here are the key aspects you need to know:
 
-1. **Группа наставничества Women's TMRG** — можно участвовать в качестве наставника или быть подопечным руководителя.
-2. **Программа job shadowing** — наблюдение за коллегами в других ролях.
-3. **Программа коучинга** — официальная программа профессионального развития GitLab.
-4. **Развитие навыков** — ресурсы для перехода от роли individual contributor к менеджерской позиции.
+1. **Core Values**: Familiarize yourself with GitLab's core values which underpin how the company operates and interacts with its employees and customers.
 
-**Источники:**
+2. **Code Review Process**: Understand that every merge request requires a code review, which should be responded to within 36 hours. Engage in constructive dialogue if you disagree with feedback.
+
+3. **Asynchronous Communication**: GitLab prefers asynchronous communication over synchronous methods to accommodate team members in different time zones and foster inclusive discussions.
+
+4. **Leave Policies**: Be aware of GitLab’s leave policies, including vacation and parental leave, to understand your entitlements and the processes involved.
+
+5. **Focus on Security**: Recognize the importance of security within GitLab's operations and how it relates to the product and customer assurance.
+
+6. **People Group Support**: Utilize available resources from the People Group to enhance your career and experience within the company.
+
+7. **Emphasis on Collaboration**: GitLab encourages collaborative practices that align with its mission, valuing contributions that lead to effective teamwork and innovation.
+
+These aspects will help you integrate successfully into your role at GitLab and understand the company culture.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
+- https://handbook.gitlab.com/handbook/communication/
+- https://handbook.gitlab.com/handbook/people-group/
+- https://handbook.gitlab.com/handbook/security/
+
+---
+
+## Scenario: Engineering career growth
+
+**Sources present:** 7/10 turns (⚠️ PARTIAL)
+
+**Initial goal extracted:** _развивать карьеру в GitLab_
+
+**Final goal:** _развивать карьеру в GitLab_
+
+### Turn 1: I'm a mid-level engineer at GitLab and I want to grow my career here. Explain GitLab's software development workflow first
+
+**RAG:** score=0.761 | sources=✅
+
+**Rewritten:** _As a mid-level engineer at GitLab seeking to advance your career within the company, could you provide a detailed explanation of the software development workflow utilized at GitLab?_
+
+**Answer:**
+GitLab's software development workflow is primarily based on the GitLab Flow, which integrates both continuous integration and deployment practices along with issue tracking. Here are the key points of the workflow:
+
+1. **Collaboration**: Teams typically consist of backend engineers, frontend engineers, product designers, and product managers who share the responsibility for shipping issues in a planned release.
+
+2. **Issue Management**: Development begins with issues that are logged and prioritized based on customer needs and business strategy. Each team collaborates to determine the technical implementation (the "How") and scheduling (the "When") of releases.
+
+3. **Code Review**: There are specific rules around code review, ensuring quality and alignment with GitLab's standards before any code is merged into the main branch.
+
+4. **Reverting Changes**: If necessary, there are procedures in place for reverting merge requests to maintain the integrity of the codebase.
+
+5. **Continuous Feedback and Improvement**: As development progresses, teams are encouraged to continuously communicate and reassess their ability to deliver features on time, addressing any potential delays proactively.
+
+This structured yet flexible approach allows for efficient collaboration, accountability, and responsiveness to feedback, ensuring that GitLab products continue to meet user needs effectively.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/
+- https://handbook.gitlab.com/handbook/engineering/
+
+---
+
+### Turn 2: How are merge requests handled and reviewed?
+
+**RAG:** score=0.715 | sources=✅
+
+**Rewritten:** _What are the procedures and best practices for managing and reviewing merge requests in software development?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+Merge requests in GitLab are handled through a structured code review process. Here are the key aspects:
+
+1. **Mandatory Code Reviews**: Every merge request must undergo a code review before it can be merged. This ensures that the code adheres to GitLab’s quality standards.
+
+2. **Review Assignments**: The guidelines specify who needs to review, approve, and eventually merge the merge request. Assignments are typically made based on expertise and availability.
+
+3. **Review Response Time**: Reviewers are expected to respond within certain service level objectives (SLOs). If a reviewer is unable to provide feedback in a timely manner, they should inform the author and help find another available reviewer to prevent any blocks.
+
+4. **Feedback and Communication**: Reviewers communicate feedback through comments in the merge request and can indicate their review status using various emojis. This helps maintain clarity about where a review stands.
+
+5. **Auto-Merge Functionality**: Once a merge request has been approved and the relevant reviews have occurred, maintainers can use the auto-merge feature to streamline the integration of the changes into the main branch.
+
+Overall, this process emphasizes collaboration, prompt communication, and adherence to quality standards to ensure successful integration of code changes.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
+- https://handbook.gitlab.com/handbook/engineering/workflow/
+
+---
+
+### Turn 3: What are the engineering management principles at GitLab?
+
+**RAG:** score=0.782 | sources=❌
+
+**Rewritten:** _What are the key engineering management principles used at GitLab?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+I don't know.
+
+---
+
+### Turn 4: How do performance reviews work for engineers?
+
+**RAG:** score=0.669 | sources=❌
+
+**Rewritten:** _What is the process and methodology of performance evaluations for engineering professionals?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+I don't know.
+
+---
+
+### Turn 5: What are the criteria for promotion to senior engineer?
+
+**RAG:** score=0.711 | sources=✅
+
+**Rewritten:** _What are the specific requirements and criteria for advancing to the position of Senior Engineer?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+The criteria for promotion to a Senior engineer at GitLab include:
+
+1. **Maintainership**: Engineers moving into the Senior role are expected to have already become maintainers prior to their promotion. This means they should have demonstrated the ability to review and merge code effectively.
+
+2. **Experience and Expertise**: They should have a sufficient level of experience and expertise that aligns with the responsibilities and expectations of a Senior engineer.
+
+Overall, the emphasis is on demonstrating the necessary skills and responsibilities through maintainership before being eligible for promotion.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/workflow/code-review/
+
+---
+
+### Turn 6: How does GitLab handle underperforming team members?
+
+**RAG:** score=0.714 | sources=❌
+
+**Rewritten:** _What strategies and processes does GitLab implement to manage and address the performance issues of team members who are not meeting expectations?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+I don't know.
+
+---
+
+### Turn 7: What is expected from an engineering manager vs individual contributor?
+
+**RAG:** score=0.645 | sources=✅
+
+**Rewritten:** _What are the typical responsibilities and expectations of an engineering manager compared to those of an individual contributor in a technical team?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+An engineering manager at GitLab is expected to take on the following responsibilities compared to an individual contributor:
+
+1. **Team Leadership**: Engineering managers guide and support their teams, fostering a collaborative environment and ensuring that team members are aligned with the overall goals.
+
+2. **Strategic Direction**: They contribute to the strategic planning and execution of engineering goals, working closely with other departments and stakeholders to prioritize and define the technical roadmap.
+
+3. **Performance Management**: Managers are responsible for assessing team performance, providing feedback, and facilitating development opportunities for their team members.
+
+4. **Communication**: They are expected to facilitate communication within the team and across the organization, ensuring that everyone is informed and engaged.
+
+In contrast, an individual contributor focuses more on executing their specific tasks, such as coding, reviewing code, and delivering features or products as part of their designated role within the team.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/engineering/
+
+---
+
+### Turn 8: How does GitLab approach psychological safety and inclusion?
+
+**RAG:** score=0.758 | sources=✅
+
+**Rewritten:** _What strategies and practices does GitLab implement to foster psychological safety and promote inclusion within its organization?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+GitLab approaches psychological safety and inclusion by fostering a safe community where all team members feel secure in expressing themselves. The organization emphasizes that:
+
+1. **Non-Discrimination**: GitLab does not tolerate abuse, harassment, exclusion, discrimination, or retaliation within its community. This creates an environment where individuals can feel safe and valued.
+
+2. **Respectful Communication**: Employees are encouraged not to make jokes or unfriendly remarks about personal characteristics. Such respect is crucial for maintaining a positive culture.
+
+3. **Supportive Environment**: Managers are advised to facilitate environments that promote psychological safety, including providing reasonable accommodations that help team members perform their roles effectively.
+
+Overall, GitLab prioritizes creating an inclusive workplace where all employees can thrive without fear of negative consequences based on their identity.
+
+**Sources:**
+- https://handbook.gitlab.com/handbook/values/
+- https://handbook.gitlab.com/handbook/company/culture/inclusion/
+
+---
+
+### Turn 9: What mentorship or learning opportunities does GitLab offer?
+
+**RAG:** score=0.807 | sources=✅
+
+**Rewritten:** _What mentorship programs or educational opportunities does GitLab provide for individuals seeking to enhance their skills and knowledge?_
+
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
+
+**Answer:**
+GitLab offers several mentorship and learning opportunities, including:
+
+1. **Women's TMRG Mentorship Group**: This group allows individuals to either be a mentor, practicing leadership, or to get paired with a leader from whom they can learn.
+
+2. **Shadow Program**: GitLab encourages team members to explore opportunities to join a job shadow program, which allows them to learn from others in different roles.
+
+3. **Leadership Transition Skills**: GitLab provides resources to explore the skills needed to successfully transition from an individual contributor role to a managerial position.
+
+These initiatives are designed to support career development and facilitate growth within the organization.
+
+**Sources:**
 - https://handbook.gitlab.com/handbook/leadership/
 - https://handbook.gitlab.com/handbook/people-group/learning-and-development/growth-and-development/
 
 ---
 
-### Ход 10: Основываясь на сказанном, на чём мне сосредоточиться для карьерного роста в GitLab?
+### Turn 10: Based on what you've told me, what should I focus on to grow my career at GitLab?
 
-**RAG:** score=0.740 | источники=✅
+**RAG:** score=0.761 | sources=✅
 
-**Переформулировано:** _Принимая во внимание предоставленную информацию, на каких конкретных областях мне следует сосредоточиться для продвижения карьеры в GitLab?_
+**Rewritten:** _What specific areas or skills should I concentrate on to enhance my career development opportunities at GitLab?_
 
-**Состояние задачи:**
-- Цель: Понять возможности наставничества и обучения в GitLab
-- Уточнено: GitLab имеет группу наставничества Women's TMRG.; Доступна программа job shadowing.; GitLab предлагает официальную программу коучинга.
+**Task state:**
+- Goal: развивать карьеру в GitLab
+- Clarified: пользователь - инженер среднего уровня в GitLab; пользователь хочет развивать карьеру в GitLab; пользователь попросил объяснить рабочий процесс разработки ПО в GitLab
 
-**Ответ:**
-Для карьерного роста в GitLab рекомендую сосредоточиться на следующем:
+**Answer:**
+To grow your career at GitLab, you should focus on the following areas:
 
-1. **Участие в программах наставничества** — вступите в Women's TMRG для наставничества или получения опыта от руководителей.
-2. **Job shadowing** — воспользуйтесь программой для понимания других ролей и функций.
-3. **Развитие лидерских качеств** — если вы хотите перейти от IC к менеджерской роли, развивайте необходимые навыки и изучайте имеющиеся ресурсы.
-4. **Программа коучинга** — воспользуйтесь официальной программой для персонализированного руководства.
+1. **Development of Technical Skills**: Leverage the competencies framework provided by GitLab to enhance your skills relevant to your current role. This framework can help you understand what knowledge and behaviors are necessary for effective performance.
 
-**Источники:**
+2. **Mentorship Opportunities**: Participate in programs such as the Women's TMRG mentorship group to either mentor others or find a mentor who can help guide your career decisions and growth.
+
+3. **Job Shadowing**: Engage in the Shadow program to observe and learn from colleagues in different roles. This can help you gain insights into other positions and possibly prepare for future opportunities.
+
+4. **Transitioning to Management**: If you're interested in moving into a managerial role, explore the skills needed to transition successfully from an individual contributor to a manager.
+
+5. **Engage in Continuous Learning**: Take advantage of any formal coaching programs that may be introduced, as well as any ongoing learning and development resources provided by GitLab.
+
+By focusing on these areas, you can enhance your career growth and align your development with GitLab's goals.
+
+**Sources:**
 - https://handbook.gitlab.com/handbook/leadership/
 - https://handbook.gitlab.com/handbook/people-group/learning-and-development/growth-and-development/
+- https://handbook.gitlab.com/handbook/people-group/competencies/
 
 ---
+

@@ -1,5 +1,8 @@
 # Day 25 — RAG + Task Memory (production-like chat)
 
+**Видео (неделя 5, все дни):** [▶ Google Drive](https://drive.google.com/drive/folders/1Buhxb6gJ6stIYDTxpYsWL0Ce9rAinH3H?usp=share_link)
+
+
 ## ⭐ Main Code
 
 | File | What it does |
@@ -22,12 +25,15 @@ Build a production-like chat that combines RAG with task memory:
 
 ## What was done
 
-**Task state extraction:**
-- After each user message (RAG mode): short LLM call (`gpt-4o-mini`, `max_tokens=200`)
-- Input: last 6 messages from `Memory.short_term`
-- Output: `{goal, clarified_facts, constraints}` JSON
+**Task state extraction (code owns accumulation, LLM only proposes a delta):**
+- After each user message (RAG mode): short LLM call (`gpt-4o-mini`, `max_tokens=300`, `response_format=json_object`)
+- Input: last 12 messages from `Memory.short_term` + the CURRENT goal/facts/constraints
+- Output: `{goal, new_facts, new_constraints}` — only what's NEW in this turn
+- Merge happens in Python (`extract_task_state()`): `goal` is set once and frozen (never overwritten once non-empty); `new_facts`/`new_constraints` are appended with exact-string dedup
 - Stored in `Memory.working` (already declared in dataclass, was unused before)
 - Fallback: return current state unchanged on any error
+
+**Why the merge is deterministic, not LLM-driven:** first version asked the LLM to re-derive the *whole* `{goal, clarified_facts, constraints}` state every turn from a short window of recent messages. In testing this drifted badly — `goal` kept jumping to whatever the last 1-2 exchanges were about (e.g. locked onto "power harassment" after two Q&A turns on that topic, discarding the real conversation-level goal), and facts got polluted with GitLab domain knowledge from the assistant's own answers instead of things the user actually said. Fix: the LLM never sees or restates the accumulated state as a whole — it only reports the delta for the current turn, and Python appends it. `clarified_facts` covers both (1) facts about the user themselves and (2) a short label for each topic they asked about, so "what the user already clarified" is visibly non-empty and growing across a long conversation, not just personal facts.
 
 **System prompt injection:**
 ```
@@ -48,10 +54,10 @@ Injected before `[RAG MODE]` instruction, keeping task context persistent across
 
 **Multi-turn eval — 2 scenarios × 10 messages:**
 
-| Scenario | Sources present | Notes |
-|---|---|---|
-| A: New employee onboarding | 10/10 ✅ | All in-scope questions answered with sources |
-| B: Engineering career growth | 7/10 | 3 turns: "I don't know" (topics not in handbook = correct!) |
+| Scenario | Sources present | Goal | Notes |
+|---|---|---|---|
+| A: New employee onboarding | 9/10 | frozen from turn 2: "успешное начало работы в GitLab" | 1 honest "I don't know" despite score > threshold |
+| B: Engineering career growth | 7/10 | frozen from turn 2: "развивать карьеру в GitLab" | 3 turns "I don't know" — those topics (performance reviews, underperformance handling, mgmt principles) genuinely aren't in the loaded handbook corpus |
 
 ```bash
 cd agent-web
@@ -65,4 +71,4 @@ cd agent-web
 
 ## Key observation
 
-Task state is extracted fresh every turn from the last 6 messages — so the `goal` field evolves as the conversation progresses. The assistant never loses the thread: conversation history is always passed in full to the LLM, and task state reinforces the current objective in the system prompt. "I don't know" responses (score > 0.55 but insufficient context) correctly have no sources — the citation instruction works.
+`goal` is set once (turn 2 in both scenarios) and stays frozen for the rest of a 10-turn conversation — it does not drift to whatever topic the last question happened to be about. `clarified_facts` grows by one entry almost every turn (both self-facts and topic labels), so by turn 10 it visibly reflects "everything the user has clarified" instead of staying at 1-2 items. `constraints` catches instructions like "answer only in Russian, max 3 sentences" even when they're a side remark attached to an unrelated question, and persists them to the end. "I don't know" responses (retrieved score above threshold but content genuinely absent from the corpus) correctly have no sources — anti-hallucination from day 24 still holds under task memory.

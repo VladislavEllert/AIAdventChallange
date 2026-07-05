@@ -1,5 +1,8 @@
 # Day 23 — Reranking & Filtering
 
+**Видео (неделя 5, все дни):** [▶ Google Drive](https://drive.google.com/drive/folders/1Buhxb6gJ6stIYDTxpYsWL0Ce9rAinH3H?usp=share_link)
+
+
 ## ⭐ Main Code
 
 | File | What it does |

@@ -286,7 +286,7 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 # Day 25: extract/update task state from conversation history
                 task_state = extract_task_state(
                     agent.provider,
-                    agent.memory.short_term[-6:],
+                    agent.memory.short_term[-12:],
                     agent.memory.working or {},
                 )
                 agent.memory.working = task_state

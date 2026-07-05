@@ -1,5 +1,8 @@
 # Day 24 — Citations, Sources & Anti-Hallucination
 
+**Видео (неделя 5, все дни):** [▶ Google Drive](https://drive.google.com/drive/folders/1Buhxb6gJ6stIYDTxpYsWL0Ce9rAinH3H?usp=share_link)
+
+
 ## ⭐ Main Code
 
 | File | What it does |

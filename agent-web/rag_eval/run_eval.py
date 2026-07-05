@@ -127,7 +127,7 @@ SCENARIO_A = {
 SCENARIO_B = {
     "name": "Engineering career growth",
     "messages": [
-        "Explain GitLab's software development workflow",
+        "I'm a mid-level engineer at GitLab and I want to grow my career here. Explain GitLab's software development workflow first",
         "How are merge requests handled and reviewed?",
         "What are the engineering management principles at GitLab?",
         "How do performance reviews work for engineers?",
@@ -166,7 +166,7 @@ def run_scenario(provider, index, scenario: dict) -> list[dict]:
         meta["rewritten_query"] = rewritten
 
         # Extract task state (pass current history before this turn)
-        task_state = extract_task_state(provider, history[-6:], task_state)
+        task_state = extract_task_state(provider, history[-12:], task_state)
 
         # Build context
         context_parts = []
