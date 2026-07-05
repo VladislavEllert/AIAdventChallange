@@ -22,12 +22,16 @@ interface AppStore {
   toggleRightPanel: () => void
   rightPanelTab: RightTab
   setRightPanelTab: (t: RightTab) => void
+  ragEnabled: boolean
+  setRagEnabled: (v: boolean) => void
+  mcpEnabled: boolean
+  setMcpEnabled: (v: boolean) => void
 }
 
 export const useAppStore = create<AppStore>()(
   persist(
     (set) => ({
-      theme: 'system',
+      theme: 'dark',
       setTheme: (theme) => set({ theme }),
       activeSessionId: null,
       setActiveSessionId: (id) => set({ activeSessionId: id }),
@@ -44,6 +48,10 @@ export const useAppStore = create<AppStore>()(
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
       rightPanelTab: 'memory',
       setRightPanelTab: (rightPanelTab) => set({ rightPanelTab }),
+      ragEnabled: false,
+      setRagEnabled: (ragEnabled) => set({ ragEnabled }),
+      mcpEnabled: true,
+      setMcpEnabled: (mcpEnabled) => set({ mcpEnabled }),
     }),
     { name: 'agent-web-app' }
   )

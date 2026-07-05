@@ -12,13 +12,16 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from agent_web.dependencies import get_manager
+from agent_web.dependencies import get_manager, get_rag_index
 from agent_web.services.agent_manager import AgentManager
 from agent_web.schemas.chat import ChatRequest
 from agent_cli.invariants.store import load_invariants
 from agent_cli.invariants.checker import check_code, check_llm
 import agent_cli.config as cfg
 from agent_web.services.mcp_client import get_tools_sync, call_tool_sync, TOOL_LABELS
+from agent_web.services.rag.retriever import search as rag_search
+from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSWER
+from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
 
 router = APIRouter(tags=["chat"])
 
@@ -251,12 +254,147 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
             return
         # ─────────────────────────────────────────────────────────────────
 
+        # ── RAG path (days 22–24) ─────────────────────────────────────────
+        if req.use_rag:
+            _zero_usage = type("U", (), {
+                "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                "cost_rub": 0.0, "elapsed_ms": 0,
+            })()
+            try:
+                rag_index = get_rag_index()
+
+                # Day 23: query rewrite — short LLM call to expand/clarify query
+                rewritten_query = msg
+                try:
+                    rw_resp = agent.provider.client.chat.completions.create(
+                        model=agent.model,
+                        messages=[
+                            {"role": "system", "content": (
+                                "Translate the user's question to English if needed, then rewrite it "
+                                "for semantic search over an English corpus. "
+                                "Expand abbreviations, add synonyms, make it more specific. "
+                                "Return ONLY the rewritten English query, nothing else."
+                            )},
+                            {"role": "user", "content": msg},
+                        ],
+                        max_tokens=80,
+                    )
+                    rewritten_query = rw_resp.choices[0].message.content.strip()
+                except Exception:
+                    rewritten_query = msg  # fallback to original
+
+                # Day 25: extract/update task state from conversation history
+                task_state = extract_task_state(
+                    agent.provider,
+                    agent.memory.short_term[-6:],
+                    agent.memory.working or {},
+                )
+                agent.memory.working = task_state
+
+                hits, rag_meta = rag_search(
+                    rewritten_query, rag_index, top_k=TOP_K_FINAL, threshold=THRESHOLD
+                )
+                rag_meta["rewritten_query"] = rewritten_query
+
+                # Day 24: "don't know" gate — if best score below answer threshold
+                if rag_meta["best_score"] < THRESHOLD_ANSWER:
+                    not_know_msg = (
+                        "I don't have information about this in the GitLab Handbook knowledge base. "
+                        "Could you rephrase or ask something more specific?"
+                    )
+                    if rag_meta["best_score"] > 0:
+                        # Suggest the closest section found
+                        closest = rag_search(rewritten_query, rag_index, top_k=1, threshold=0.0)[0]
+                        if closest:
+                            top_chunk, top_score = closest[0]
+                            not_know_msg += (
+                                f"\n\nClosest topic found (score={top_score:.3f}): "
+                                f"**{top_chunk.section}** — {top_chunk.source}"
+                            )
+                    agent.memory.add_message("user", msg)
+                    agent.memory.add_message("assistant", not_know_msg)
+                    yield _sse_event("chunk", {"text": not_know_msg})
+                    yield _sse_event("rag_meta", rag_meta)
+                    yield _sse_event("task_state", task_state)
+                    yield _sse_event("sources", [])
+                    yield _sse_event("usage", {
+                        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                        "cost_rub": 0.0, "elapsed_ms": 0,
+                    })
+                    manager.save(req.session_id)
+                    yield _sse_event("done", {})
+                    return
+
+                # Day 24: emit sources SSE right after retrieval (before LLM response)
+                sources_payload = [
+                    {
+                        "source": chunk.source,
+                        "section": chunk.section,
+                        "chunk_id": chunk.chunk_id,
+                        "quote": chunk.text[:300],
+                        "score": round(score, 4),
+                    }
+                    for chunk, score in hits
+                ]
+                yield _sse_event("sources", sources_payload)
+                yield _sse_event("rag_meta", rag_meta)
+                yield _sse_event("task_state", task_state)
+
+                # Build context with numbered excerpts
+                context_parts = []
+                for i, (chunk, score) in enumerate(hits, 1):
+                    context_parts.append(
+                        f"[{i}] score={score:.3f} | {chunk.source} | {chunk.section}\n{chunk.text[:700]}"
+                    )
+                context_block = "\n\n---\n".join(context_parts)
+
+                # Day 25: task state injection + Day 24: citation instruction
+                task_state_block = format_task_state_block(task_state)
+                rag_system_suffix = (
+                    "\n\n[RAG MODE] Answer ONLY using the excerpts below. "
+                    "After your answer, add a '**Sources:**' section listing the URLs used. "
+                    "Include a short quote from each source that supports your answer. "
+                    "If the excerpts do not contain the answer, say you don't know."
+                )
+                agent._try_summarize()
+                messages = agent._build_messages(
+                    msg, working_context=f"GitLab Handbook excerpts:\n\n{context_block}"
+                )
+                # Append task state + RAG instruction to system message
+                messages[0] = {**messages[0], "content": messages[0]["content"] + task_state_block + rag_system_suffix}
+
+                chunk_iter, ref = agent.provider.chat_stream_with_stats(messages, agent.model)
+                full_response = ""
+                for chunk in chunk_iter:
+                    full_response += chunk
+                    yield _sse_event("chunk", {"text": chunk})
+                agent.memory.add_message("user", msg)
+                agent.memory.add_message("assistant", full_response)
+                usage = ref.usage
+                agent.session_stats.add(usage)
+
+            except Exception as e:
+                yield _sse_event("chunk", {"text": f"\n\n_[RAG error: {e}]_"})
+                usage = _zero_usage
+
+            yield _sse_event("usage", {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "cost_rub": round(usage.cost_rub, 6),
+                "elapsed_ms": usage.elapsed_ms,
+            })
+            manager.save(req.session_id)
+            yield _sse_event("done", {})
+            return
+        # ─────────────────────────────────────────────────────────────────
+
         # ── MCP tool calling ──────────────────────────────────────────────
         tool_used = False
         usage = None
 
         try:
-            tool_schemas = get_tools_sync()
+            tool_schemas = get_tools_sync() if req.use_mcp else []
         except Exception:
             tool_schemas = []
 
@@ -282,10 +420,10 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                     "спрашивает о новостях/релизах/ценах/событиях после августа 2025, "
                     "или когда не уверен в актуальности факта. "
                     "Не отвечай из памяти по фактам которые могли измениться.\n"
-                    "Используй create_issue когда: пользователь просит создать issue/задачу в GitHub. "
-                    "Для create_issue обязательно передай: owner (владелец репо), repo (имя репо), "
+                    "Используй issue_write когда: пользователь просит создать issue/задачу в GitHub. "
+                    "Для issue_write обязательно передай: method='create', owner (владелец репо), repo (имя репо), "
                     "title (заголовок), body (описание). "
-                    "Репозиторий пользователя по умолчанию: owner='vladislav', repo='AIAdventChallange' "
+                    "Репозиторий пользователя по умолчанию: owner='VladislavEllert', repo='AIAdventChallange' "
                     "(если пользователь не уточнил другой)."
                 )
                 hint = "".join(hint_parts)

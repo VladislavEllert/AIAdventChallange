@@ -48,6 +48,9 @@
 | 04 | 18 | MCP: APScheduler кэш MOEX каждые 30 сек, get_moex_history SQLite, /history команда | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
 | 04 | 19 | MCP Composition: get_crypto_klines → calculate_indicators (RSI/MACD) → save_report — гарантированный пайплайн | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
 | 04 | 20 | MCP Orchestration: два сервера (VPS финансы 8001 + GitHub 8003), роутинг по реестру, цепочка 4 тула 2 сервера | done | [agent-web](agent-web/) · [mcp-server](mcp-server/) | [▶](https://drive.google.com/drive/folders/1mPjzjhtExPGUAuEv_Zj0mI6s94kfgVTu?usp=share_link) |
+| 05 | 21 | RAG: индексация 24 страниц GitLab Handbook (93k слов) → 2 стратегии chunking (fixed/structural) + Ollama `nomic-embed-text` 768-dim + JSON индекс с метаданными | done | [agent-web/scripts/rag](agent-web/scripts/rag/) · [agent-web/services/rag](agent-web/agent_web/services/rag/) | todo |
+| 05 | 22 | RAG запрос: тумблер RAG в UI, ретрив top-5 чанков → контекст в промпт → стрим; 10 контрольных вопросов, `results_day22.md` — без RAG галлюцинации / с RAG факты | done | [agent-web](agent-web/) · [rag_eval](agent-web/rag_eval/) | todo |
+| 05 | 23 | RAG фильтрация: query rewrite (LLM, перевод на английский) → cosine threshold filter → `rag_meta` SSE → badge в UI (raw→kept→used + rewritten query); сравнение RAG без фильтра / с фильтром на 10 вопросах, `results_day23.md` | done | [agent-web](agent-web/) · [rag_eval](agent-web/rag_eval/) | todo |
 
 ## Приложение AgentChat (неделя 2)
 

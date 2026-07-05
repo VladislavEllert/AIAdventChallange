@@ -8,6 +8,8 @@ class ChatRequest(BaseModel):
     persona: str | None = None
     model: str | None = None         # overrides saved model for this request
     profile_name: str | None = None  # profile to inject into system prompt
+    use_rag: bool = False            # enable RAG retrieval
+    use_mcp: bool = True             # enable MCP tools
 
 
 class ChatUsage(BaseModel):

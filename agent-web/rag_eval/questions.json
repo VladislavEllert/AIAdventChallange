@@ -1,0 +1,52 @@
+[
+  {
+    "question": "Какова политика GitLab в отношении оплачиваемого отпуска? Сколько дней получают сотрудники?",
+    "expectation": "Гибкая политика PTO (~25 рабочих дней); фиксированного числа нет; сотрудников поощряют брать отпуск",
+    "expected_sources": ["time-off-types", "time-off"]
+  },
+  {
+    "question": "Какой срок установлен для ответа ревьюера на запрос code review в GitLab? Что он обязан сделать, если не успевает?",
+    "expectation": "Не более 36 часов; уведомить автора и помочь найти другого ревьюера",
+    "expected_sources": ["code-review"]
+  },
+  {
+    "question": "Как GitLab обращается с отпуском по уходу за ребёнком?",
+    "expectation": "16 недель оплачиваемого отпуска для любого сотрудника вне зависимости от пола; подробности в leave-types",
+    "expected_sources": ["leave-types"]
+  },
+  {
+    "question": "Что значит «power harassment» по определению в политике GitLab?",
+    "expectation": "Использование должностных полномочий для причинения психического стресса, физической боли или ухудшения рабочей обстановки",
+    "expected_sources": ["anti-harassment"]
+  },
+  {
+    "question": "Через какую систему подаётся заявка на декретный отпуск в GitLab для сотрудников в США? Сколько времени занимает обработка?",
+    "expectation": "Tilt (через Okta); уведомление Absence Management Team через HelpLab-тикет",
+    "expected_sources": ["leave-types", "caregiver-sick-absences"]
+  },
+  {
+    "question": "Как в GitLab проводят анализ причин инцидента после сбоя?",
+    "expectation": "Прозрачный процесс; любой сотрудник может провести RCA; фокус на «что пошло хорошо, что нет»",
+    "expected_sources": ["root-cause-analysis"]
+  },
+  {
+    "question": "Сколько собак можно иметь сотруднику GitLab?",
+    "expectation": "Не по теме — в Handbook нет лимита на собак; embedding может ложно зацепиться за 'supportive environment' формулировки",
+    "expected_sources": []
+  },
+  {
+    "question": "Какая порода кошки лучше всего подходит для офиса GitLab?",
+    "expectation": "Не по теме — в Handbook нет ничего про кошек/офисных животных; HR-лексика может дать обманчиво высокий score",
+    "expected_sources": []
+  },
+  {
+    "question": "Как лучше жарить картошку с луком?",
+    "expectation": "Полностью не по теме, никакой связи с GitLab Handbook — ожидается низкий similarity score",
+    "expected_sources": []
+  },
+  {
+    "question": "Есть ли у GitLab дресс-код для видеозвонков?",
+    "expectation": "Не по теме — в Handbook нет дресс-кода; пограничный случай, звучит как правдоподобный HR-вопрос",
+    "expected_sources": []
+  }
+]

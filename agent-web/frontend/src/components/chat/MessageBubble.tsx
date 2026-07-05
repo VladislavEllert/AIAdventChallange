@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { Message } from '../../stores/useChatStore'
 import MarkdownRenderer from './MarkdownRenderer'
+import SourcesBlock from './SourcesBlock'
+import TaskStateBlock from './TaskStateBlock'
 
 interface Props {
   msg: Message
@@ -66,6 +68,14 @@ export default function MessageBubble({ msg }: Props) {
                 <MarkdownRenderer content={msg.content} />
               </div>
             )}
+
+            {/* Sources block (day 24) */}
+            {msg.sources && msg.sources.length > 0 && (
+              <SourcesBlock sources={msg.sources} ragMeta={msg.ragMeta} />
+            )}
+
+            {/* Task memory block (day 25) */}
+            <TaskStateBlock taskState={msg.taskState} />
 
             {showMeta && msg.usage && (
               <div style={{

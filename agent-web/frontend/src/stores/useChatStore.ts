@@ -1,6 +1,28 @@
 import { create } from 'zustand'
 import type { ChatUsage } from '../api/chat'
 
+export interface Source {
+  source: string
+  section: string
+  chunk_id: string
+  quote: string
+  score: number
+}
+
+export interface RagMeta {
+  top_k_raw: number
+  top_k_kept: number
+  top_k_final: number
+  best_score: number
+  rewritten_query?: string
+}
+
+export interface TaskState {
+  goal: string
+  clarified_facts: string[]
+  constraints: string[]
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -8,6 +30,9 @@ export interface Message {
   usage?: ChatUsage
   streaming?: boolean
   imagePreview?: string
+  sources?: Source[]
+  ragMeta?: RagMeta
+  taskState?: TaskState
 }
 
 interface ChatStore {
@@ -21,6 +46,9 @@ interface ChatStore {
   addMessage: (msg: Message) => void
   appendChunk: (id: string, text: string) => void
   finalizeMessage: (id: string, usage: ChatUsage) => void
+  appendSources: (id: string, sources: Source[]) => void
+  appendRagMeta: (id: string, meta: RagMeta) => void
+  appendTaskState: (id: string, ts: TaskState) => void
   setStreaming: (v: boolean) => void
   addCost: (u: ChatUsage) => void
   setViolation: (v: { invariant: string; desc: string } | null) => void
@@ -55,6 +83,27 @@ export const useChatStore = create<ChatStore>((set) => ({
       ),
     })),
 
+  appendSources: (id, sources) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, sources } : m
+      ),
+    })),
+
+  appendRagMeta: (id, meta) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, ragMeta: meta } : m
+      ),
+    })),
+
+  appendTaskState: (id, ts) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, taskState: ts } : m
+      ),
+    })),
+
   setStreaming: (v) => set({ isStreaming: v }),
 
   addCost: (u) =>
@@ -69,4 +118,5 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   reset: () =>
     set({ messages: [], isStreaming: false, sessionCost: 0, sessionTokens: 0, violation: null, toolStatus: null }),
+
 }))

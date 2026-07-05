@@ -68,12 +68,14 @@ export default function ChatInput() {
   const activeModel = useAppStore((s) => s.activeModel)
   const setActiveModel = useAppStore((s) => s.setActiveModel)
   const activeProfileName = useAppStore((s) => s.activeProfileName)
+  const ragEnabled = useAppStore((s) => s.ragEnabled)
+  const mcpEnabled = useAppStore((s) => s.mcpEnabled)
   const setActiveSessionId = useAppStore((s) => s.setActiveSessionId)
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel)
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
   const setRightPanelTab = useAppStore((s) => s.setRightPanelTab)
   const isStreaming = useChatStore((s) => s.isStreaming)
-  const { addMessage, appendChunk, finalizeMessage, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
+  const { addMessage, appendChunk, finalizeMessage, appendSources, appendRagMeta, appendTaskState, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort()
@@ -352,6 +354,9 @@ export default function ChatInput() {
         onViolation: (inv, desc) => setViolation({ invariant: inv, desc }),
         onToolStart: (_, label) => setToolStatus(label),
         onToolDone: () => setToolStatus(null),
+        onSources: (sources) => appendSources(assistantId, sources),
+        onRagMeta: (meta) => appendRagMeta(assistantId, meta),
+        onTaskState: (ts) => appendTaskState(assistantId, ts),
         onDone: () => { setToolStatus(null); setStreaming(false); abortRef.current = null },
         onError: (e) => {
           finalizeMessage(assistantId, { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost_rub: 0, elapsed_ms: 0 })
@@ -365,9 +370,12 @@ export default function ChatInput() {
       activeModel || undefined,
       activeProfileName || undefined,
       ctrl.signal,
+      ragEnabled || undefined,
+      mcpEnabled,
     )
   }, [text, imageB64, imagePreview, isStreaming, activeSessionId, activeAgentPersona, activeModel,
-      activeProfileName, executeCommand, addMessage, appendChunk, finalizeMessage, setStreaming, addCost, setViolation, setToolStatus])
+      activeProfileName, ragEnabled, mcpEnabled, executeCommand, addMessage, appendChunk, finalizeMessage,
+      appendSources, appendRagMeta, appendTaskState, setStreaming, addCost, setViolation, setToolStatus])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

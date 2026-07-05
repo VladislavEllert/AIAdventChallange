@@ -8,12 +8,37 @@ export interface ChatUsage {
   elapsed_ms: number
 }
 
+export interface ChatSource {
+  source: string
+  section: string
+  chunk_id: string
+  quote: string
+  score: number
+}
+
+export interface ChatRagMeta {
+  top_k_raw: number
+  top_k_kept: number
+  top_k_final: number
+  best_score: number
+  rewritten_query?: string
+}
+
+export interface ChatTaskState {
+  goal: string
+  clarified_facts: string[]
+  constraints: string[]
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void
   onUsage: (u: ChatUsage) => void
   onViolation?: (inv: string, desc: string) => void
   onToolStart?: (name: string, label: string) => void
   onToolDone?: (name: string) => void
+  onSources?: (sources: ChatSource[]) => void
+  onRagMeta?: (meta: ChatRagMeta) => void
+  onTaskState?: (ts: ChatTaskState) => void
   onDone: () => void
   onError: (e: Error) => void
 }
@@ -27,11 +52,13 @@ export async function streamChat(
   model?: string,
   profile_name?: string,
   signal?: AbortSignal,
+  use_rag?: boolean,
+  use_mcp?: boolean,
 ): Promise<void> {
   const resp = await fetch(`${BASE}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id, message, image_b64, persona, model, profile_name }),
+    body: JSON.stringify({ session_id, message, image_b64, persona, model, profile_name, use_rag, use_mcp }),
     signal,
   })
 
@@ -65,6 +92,9 @@ export async function streamChat(
           else if (event === 'violation') callbacks.onViolation?.(data.invariant ?? '', data.description ?? '')
           else if (event === 'tool_start') callbacks.onToolStart?.(data.name ?? '', data.label ?? '')
           else if (event === 'tool_done') callbacks.onToolDone?.(data.name ?? '')
+          else if (event === 'sources') callbacks.onSources?.(Array.isArray(data) ? data : [])
+          else if (event === 'rag_meta') callbacks.onRagMeta?.(data)
+          else if (event === 'task_state') callbacks.onTaskState?.(data)
           else if (event === 'done') callbacks.onDone()
         } catch {}
         event = ''

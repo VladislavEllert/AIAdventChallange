@@ -29,24 +29,24 @@
   --blur: blur(24px) saturate(200%);
 }
 
-/* Dark theme tokens */
+/* Dark theme tokens — black + white + green */
 .theme-dark {
-  --bg-base: #0d0d12;
-  --bg-gradient: linear-gradient(135deg, #0d0d18 0%, #130d1f 50%, #0d1318 100%);
-  --bg-surface: rgba(255,255,255,0.06);
-  --bg-surface-hover: rgba(255,255,255,0.10);
+  --bg-base: #000000;
+  --bg-gradient: linear-gradient(135deg, #000000 0%, #000a03 50%, #000000 100%);
+  --bg-surface: rgba(255,255,255,0.05);
+  --bg-surface-hover: rgba(255,255,255,0.09);
   --bg-input: rgba(255,255,255,0.07);
-  --border: rgba(255,255,255,0.09);
-  --text-primary: #f2f2f7;
-  --text-secondary: #aeaeb2;
-  --text-tertiary: #48484a;
-  --accent: #0a84ff;
-  --accent-bg: rgba(10,132,255,0.15);
+  --border: rgba(255,255,255,0.14);
+  --text-primary: #ffffff;
+  --text-secondary: #c0c0c0;
+  --text-tertiary: #505050;
+  --accent: #00e676;
+  --accent-bg: rgba(0,230,118,0.12);
   --red: #ff453a;
   --red-bg: rgba(255,69,58,0.15);
-  --green: #32d74b;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 8px 32px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.3);
+  --green: #00e676;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-md: 0 8px 32px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.5);
   --blur: blur(24px) saturate(160%);
 }
 
@@ -82,7 +82,8 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
 
 /* Markdown */
 .prose { line-height: 1.65; font-size: 14px; color: var(--text-primary); }
@@ -97,7 +98,8 @@ body {
 .prose code:not(pre code) {
   font-family: ui-monospace, monospace;
   font-size: 0.85em;
-  background: var(--border);
+  background: rgba(255,255,255,0.10);
+  color: #00e676;
   padding: 1px 5px;
   border-radius: 4px;
 }
@@ -111,7 +113,7 @@ body {
   font-size: 13px;
 }
 .prose pre code { background: none; padding: 0; font-size: inherit; }
-.prose a { color: var(--accent); }
+.prose a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(0,230,118,0.35); }
 .prose strong { font-weight: 600; color: var(--text-primary); }
 
 /* Highlight.js theme override */

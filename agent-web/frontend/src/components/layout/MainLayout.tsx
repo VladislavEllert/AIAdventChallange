@@ -15,6 +15,10 @@ export default function MainLayout() {
   const activeAgentPersona = useAppStore((s) => s.activeAgentPersona)
   const rightPanelTab = useAppStore((s) => s.rightPanelTab)
   const setRightPanelTab = useAppStore((s) => s.setRightPanelTab)
+  const ragEnabled = useAppStore((s) => s.ragEnabled)
+  const setRagEnabled = useAppStore((s) => s.setRagEnabled)
+  const mcpEnabled = useAppStore((s) => s.mcpEnabled)
+  const setMcpEnabled = useAppStore((s) => s.setMcpEnabled)
   const violation = useChatStore((s) => s.violation)
   const clearViolation = useChatStore((s) => s.clearViolation)
 
@@ -65,6 +69,38 @@ export default function MainLayout() {
                 : 'Чат'
               }
             </span>
+
+            {/* RAG toggle */}
+            <button
+              onClick={() => setRagEnabled(!ragEnabled)}
+              title={ragEnabled ? 'RAG включён (GitLab Handbook)' : 'RAG выключен'}
+              style={{
+                height: 28, padding: '0 10px', borderRadius: 8,
+                border: `1px solid ${ragEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                background: ragEnabled ? 'var(--accent-bg)' : 'transparent',
+                color: ragEnabled ? 'var(--accent)' : 'var(--text-tertiary)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600, letterSpacing: '0.02em',
+                transition: 'all 0.15s', flexShrink: 0,
+              }}
+            >
+              {ragEnabled ? '◈ RAG' : '◇ RAG'}
+            </button>
+
+            {/* MCP toggle */}
+            <button
+              onClick={() => setMcpEnabled(!mcpEnabled)}
+              title={mcpEnabled ? 'MCP включён (инструменты)' : 'MCP выключен'}
+              style={{
+                height: 28, padding: '0 10px', borderRadius: 8,
+                border: `1px solid ${mcpEnabled ? '#f59e0b' : 'var(--border)'}`,
+                background: mcpEnabled ? 'rgba(245,158,11,0.12)' : 'transparent',
+                color: mcpEnabled ? '#f59e0b' : 'var(--text-tertiary)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600, letterSpacing: '0.02em',
+                transition: 'all 0.15s', flexShrink: 0,
+              }}
+            >
+              {mcpEnabled ? '⚡ MCP' : '○ MCP'}
+            </button>
 
             {/* Right panel toggle buttons */}
             <div style={{ display: 'flex', gap: 4 }}>

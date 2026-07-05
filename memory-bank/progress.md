@@ -23,6 +23,9 @@
 | 04 | 16 | MCP: FastMCP-сервер на VPS (194.226.115.120:8001), 3 инструмента, day16_connect.py → список tools | done | [mcp-server](../mcp-server/) | todo |
 | 04 | 17 | MCP: agent-web интегрирует tools (tool_start/tool_done SSE), web_search + get_moex_quote → живые ответы | done | [agent-web](../agent-web/) · [mcp-server](../mcp-server/) | todo |
 | 04 | 18 | MCP: APScheduler кэш MOEX каждые 30 сек, get_moex_summary, тесты server + mcp_client | done | [agent-web](../agent-web/) · [mcp-server](../mcp-server/) | todo |
+| 05 | 21 | RAG: 24 стр. GitLab Handbook (93k слов) → fixed+structural chunking → Ollama nomic-embed-text (768-dim) → 2 JSON индекса | done | [agent-web/scripts/rag](../agent-web/scripts/rag/) | todo |
+| 05 | 22 | RAG запрос: тумблер RAG в UI (◈), ретрив top-5 → working_context → стрим; 10 вопросов eval; results_day22.md | done | [agent-web](../agent-web/) | todo |
+| 05 | 23 | Query rewrite (перевод на английский) + cosine threshold filter; rag_meta SSE; filter badge в UI; сравнение RAG без фильтра / с фильтром, results_day23.md | done | [agent-web](../agent-web/) | todo |
 
 > **Пивот (день 12+):** переходим с iOS (`AgentChat/`) на CLI/TUI на Python (`agent-cli/`).
 > AgentChat остаётся, не удаляем. Причина: недели 4–7 (MCP/RAG/VPS/пайплайны) iOS не тянет.
