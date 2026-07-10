@@ -1,5 +1,44 @@
 # WINDOWS_SETUP.md — Runbook для Windows-сессии (RTX 4060, 8GB)
 
+> **СТАТУС: выполнено (2026-07-11).** Все шаги пройдены, сервисы подняты и проверены с LAN. Реальные
+> отличия от плана ниже, актуальные данные — для Mac-сессии, которая пилит код `agent-web`.
+>
+> - **Модели:** только `qwen3:4b` (2.5GB). `qwen3:8b` скачивалась, но **удалена** — решили не тащить
+>   (место на SSD + не будет использоваться). Голосом юзер называл их «Gemma»/«Qwen2.5» — это
+>   опечатка распознавания речи, реально в Ollama всегда были только теги `qwen3:*`.
+> - **LAN-IP этого ПК:** `192.168.0.33`.
+> - **Endpoint'ы (все проверены curl'ом с самого Windows по LAN-IP, не localhost):**
+>   ```
+>   OLLAMA_CHAT_URL=http://192.168.0.33:11434/v1
+>   COMFYUI_URL=http://192.168.0.33:8188
+>   METRICS_URL=http://192.168.0.33:11435/metrics   # metrics_server.py ещё не существует — пишет Mac-сессия
+>   ```
+> - **Firewall:** 3 правила созданы вручную юзером через elevated PowerShell (агент не может пройти
+>   UAC в неинтерактивной сессии) — `Ollama 11434`, `ComfyUI 8188`, `Metrics 11435`.
+> - **Гочта с pip:** на этом ПК системный SOCKS-прокси в `HKCU\...\Internet Settings`
+>   (`ProxyServer=socks=127.0.0.1:10808`, от VPN-софта) — `pip` из коробки падает с
+>   `Missing dependencies for SOCKS support`. Фикс — гонять pip через PowerShell с явно
+>   очищенными `$env:HTTP_PROXY=""`/`$env:HTTPS_PROXY=""`. `git`/`curl` эту проблему не имели.
+> - **VRAM-реальность:** SDXL 1024×1024, 20 steps, `--lowvram` — влезло в 8GB, ~4.9GB под
+>   модель+VAE+CLIP пиково, генерация ~44с (первый прогон, холодная загрузка чекпоинта в VRAM).
+>   Одновременно с Qwen3-4B в Ollama не проверяли совместную нагрузку — на дне 29/30 замерить честно.
+> - **API-workflow:** экспортирован и закоммичен —
+>   `agent-web/agent_web/services/comfyui_workflows/sdxl.json`. Ноды: `4`=CheckpointLoaderSimple,
+>   `6`=positive CLIPTextEncode, `7`=negative CLIPTextEncode, `3`=KSampler (seed/steps/cfg сюда
+>   подставлять), `5`=EmptyLatentImage (width/height), `9`=SaveImage.
+> - **Запуск ComfyUI:** `venv\Scripts\python main.py --listen 0.0.0.0 --port 8188 --lowvram` из
+>   `C:\GitRepos\ComfyUI`. Не сервис — процесс живёт пока открыт терминал/фон. Автозапуска нет,
+>   при перезагрузке Windows нужно поднимать заново вручную (или задать через Task Scheduler —
+>   не делали, не просили).
+> - **Ollama LAN:** `OLLAMA_HOST=0.0.0.0` записан в `setx` (переживёт релогин/ребут), но при
+>   ручном перезапуске приложения (не через логин) переменную нужно явно передавать процессу —
+>   через explorer/автозапуск подхватывается из реестра, через ручной `cmd /c start` — нет.
+>
+> Мониторинг GPU на Windows: `nvidia-smi` в терминале, либо Диспетчер задач → Производительность →
+> GPU (там же VRAM/Copy/3D графики), либо `Get-Counter` для скриптовой проверки.
+
+---
+
 > **Это исполняемый runbook.** Открой Claude Code в этой сессии (репозиторий склонирован на Windows-ПК)
 > и скажи: «выполни week-06/WINDOWS_SETUP.md». Агент пройдёт шаги по порядку, проверяя каждый реальной
 > командой терминала.
