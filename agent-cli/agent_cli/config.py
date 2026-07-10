@@ -8,6 +8,9 @@ PROXYAPI_KEY: str = os.getenv("PROXYAPI_KEY", "")
 BASE_URL: str = "https://openai.api.proxyapi.ru/v1"
 DEFAULT_MODEL: str = "openai/gpt-4o-mini"
 
+OLLAMA_CHAT_URL: str = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/v1")
+COMFYUI_URL: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
+
 _ROOT = Path(__file__).parent.parent
 DATA_DIR = str(_ROOT / "data")
 PROFILES_DIR = str(_ROOT / "data" / "profiles")
