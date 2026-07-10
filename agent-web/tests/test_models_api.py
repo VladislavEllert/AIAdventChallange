@@ -14,8 +14,21 @@ def test_list_models(client):
 def test_models_have_prices(client):
     r = client.get("/api/models")
     for m in r.json():
-        assert m["input_price"] > 0
-        assert m["output_price"] > 0
+        if m["type"] == "text" and not m["model_id"].startswith("ollama/"):
+            assert m["input_price"] > 0
+            assert m["output_price"] > 0
+        else:
+            # local models (ollama/*, comfyui/*) are free
+            assert m["input_price"] == 0
+            assert m["output_price"] == 0
+
+
+def test_models_have_type():
+    from agent_cli.config import get_model_type
+    assert get_model_type("openai/gpt-4o-mini") == "text"
+    assert get_model_type("ollama/qwen3:4b") == "text"
+    assert get_model_type("comfyui/sdxl") == "image"
+    assert get_model_type("unknown/model") == "text"  # default
 
 
 def test_health(client):

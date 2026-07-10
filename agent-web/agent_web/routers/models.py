@@ -9,7 +9,7 @@ router = APIRouter(tags=["models"])
 @router.get("/models", response_model=list[ModelInfo])
 def list_models():
     return [
-        ModelInfo(model_id=mid, input_price=p["input"], output_price=p["output"])
+        ModelInfo(model_id=mid, input_price=p["input"], output_price=p["output"], type=p.get("type", "text"))
         for mid, p in _MODEL_PRICING.items()
     ]
 

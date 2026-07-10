@@ -5,7 +5,8 @@ Stored in Memory.working per session.
 """
 import json
 
-MODEL = "openai/gpt-4o-mini"
+# Fallback when the caller doesn't pass an active model (e.g. old call sites).
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 _SYSTEM = (
     "You track incremental task state for a long conversation. You are given the "
@@ -47,10 +48,14 @@ _SYSTEM = (
 )
 
 
-def extract_task_state(provider, history: list[dict], current: dict) -> dict:
+def extract_task_state(provider, history: list[dict], current: dict, model: str | None = None) -> dict:
     """Ask the LLM for only the NEW goal/facts/constraints in the recent turn, then
     merge that delta into `current` in code — the LLM never re-derives or overwrites
-    the accumulated state, which avoids goal/fact drift across topic changes."""
+    the accumulated state, which avoids goal/fact drift across topic changes.
+
+    `model` should be the session's active chat model (via DispatchProvider.client_for)
+    so this stays local when the user is on a local model — otherwise a RAG chat on
+    Ollama would silently still call the cloud for task-state extraction."""
     current = current or {"goal": "", "clarified_facts": [], "constraints": []}
     if not history:
         return current
@@ -62,8 +67,12 @@ def extract_task_state(provider, history: list[dict], current: dict) -> dict:
     )
 
     try:
-        resp = provider.client.chat.completions.create(
-            model=MODEL,
+        if hasattr(provider, "client_for"):
+            client, bare_model = provider.client_for(model or DEFAULT_MODEL)
+        else:
+            client, bare_model = provider.client, (model or DEFAULT_MODEL)
+        resp = client.chat.completions.create(
+            model=bare_model,
             messages=[
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": state_line},

@@ -55,7 +55,25 @@ export default function MessageBubble({ msg }: Props) {
         ) : (
           /* Assistant: full-width text, no bubble */
           <div>
-            {msg.streaming ? (
+            {msg.generatedImageB64 ? (
+              <img
+                src={`data:image/png;base64,${msg.generatedImageB64}`}
+                alt="generated"
+                style={{ maxWidth: '100%', borderRadius: 12, border: '1px solid var(--border)', display: 'block' }}
+              />
+            ) : msg.imageProgressPct !== undefined ? (
+              <div style={{ maxWidth: 360 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  🎨 Генерирую картинку… {msg.imageProgressPct}%
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-surface)', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${msg.imageProgressPct}%`,
+                    background: 'var(--accent)', transition: 'width 0.3s ease',
+                  }} />
+                </div>
+              </div>
+            ) : msg.streaming ? (
               <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
                 {msg.content}
               </div>

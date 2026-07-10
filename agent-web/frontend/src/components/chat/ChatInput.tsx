@@ -55,7 +55,7 @@ export default function ChatInput() {
   const [imageB64, setImageB64] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [showCommands, setShowCommands] = useState(false)
-  const [models, setModels] = useState<{ model_id: string }[]>([])
+  const [models, setModels] = useState<{ model_id: string; type?: 'text' | 'image' }[]>([])
   const [showModelPicker, setShowModelPicker] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -75,7 +75,8 @@ export default function ChatInput() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
   const setRightPanelTab = useAppStore((s) => s.setRightPanelTab)
   const isStreaming = useChatStore((s) => s.isStreaming)
-  const { addMessage, appendChunk, finalizeMessage, appendSources, appendRagMeta, appendTaskState, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
+  const { addMessage, appendChunk, finalizeMessage, appendSources, appendRagMeta, appendTaskState, setImageProgress, setGeneratedImage, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
+  const isImageModel = (activeModel ?? '').startsWith('comfyui/')
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort()
@@ -339,7 +340,10 @@ export default function ChatInput() {
     addMessage({ id: userId, role: 'user', content: msg, imagePreview: sentImage ?? undefined })
 
     const assistantId = crypto.randomUUID()
-    addMessage({ id: assistantId, role: 'assistant', content: '', streaming: true })
+    addMessage({
+      id: assistantId, role: 'assistant', content: '', streaming: true,
+      imageProgressPct: isImageModel ? 0 : undefined,
+    })
     setStreaming(true)
 
     const ctrl = new AbortController()
@@ -357,6 +361,8 @@ export default function ChatInput() {
         onSources: (sources) => appendSources(assistantId, sources),
         onRagMeta: (meta) => appendRagMeta(assistantId, meta),
         onTaskState: (ts) => appendTaskState(assistantId, ts),
+        onImageProgress: (pct) => setImageProgress(assistantId, pct),
+        onImage: (dataB64) => setGeneratedImage(assistantId, dataB64),
         onDone: () => { setToolStatus(null); setStreaming(false); abortRef.current = null },
         onError: (e) => {
           finalizeMessage(assistantId, { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost_rub: 0, elapsed_ms: 0 })
@@ -373,9 +379,10 @@ export default function ChatInput() {
       ragEnabled || undefined,
       mcpEnabled,
     )
-  }, [text, imageB64, imagePreview, isStreaming, activeSessionId, activeAgentPersona, activeModel,
+  }, [text, imageB64, imagePreview, isStreaming, activeSessionId, activeAgentPersona, activeModel, isImageModel,
       activeProfileName, ragEnabled, mcpEnabled, executeCommand, addMessage, appendChunk, finalizeMessage,
-      appendSources, appendRagMeta, appendTaskState, setStreaming, addCost, setViolation, setToolStatus])
+      appendSources, appendRagMeta, appendTaskState, setImageProgress, setGeneratedImage, setStreaming, addCost,
+      setViolation, setToolStatus])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -536,7 +543,7 @@ export default function ChatInput() {
               onMouseEnter={(e) => { if (m.model_id !== activeModel) (e.currentTarget.style.background = 'var(--bg-surface-hover)') }}
               onMouseLeave={(e) => { if (m.model_id !== activeModel) (e.currentTarget.style.background = 'transparent') }}
             >
-              {m.model_id === activeModel ? '✓ ' : ''}{m.model_id}
+              {m.model_id === activeModel ? '✓ ' : ''}{m.type === 'image' ? '🖼 ' : '💬 '}{m.model_id}
             </div>
           ))}
         </div>
@@ -575,7 +582,11 @@ export default function ChatInput() {
           value={text}
           onChange={(e) => { setText(e.target.value); adjustHeight() }}
           onKeyDown={handleKeyDown}
-          placeholder={activeSessionId ? 'Напиши сообщение… (/ — команды, Shift+Enter — перенос)' : 'Выбери или создай сессию'}
+          placeholder={
+            !activeSessionId ? 'Выбери или создай сессию'
+              : isImageModel ? 'Опиши картинку… (например: рыжий кот на подоконнике, фотореализм)'
+              : 'Напиши сообщение… (/ — команды, Shift+Enter — перенос)'
+          }
           disabled={isStreaming}
           rows={1}
           style={{

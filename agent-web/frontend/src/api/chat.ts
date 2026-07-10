@@ -39,6 +39,8 @@ export interface ChatCallbacks {
   onSources?: (sources: ChatSource[]) => void
   onRagMeta?: (meta: ChatRagMeta) => void
   onTaskState?: (ts: ChatTaskState) => void
+  onImageProgress?: (pct: number) => void
+  onImage?: (dataB64: string) => void
   onDone: () => void
   onError: (e: Error) => void
 }
@@ -95,6 +97,8 @@ export async function streamChat(
           else if (event === 'sources') callbacks.onSources?.(Array.isArray(data) ? data : [])
           else if (event === 'rag_meta') callbacks.onRagMeta?.(data)
           else if (event === 'task_state') callbacks.onTaskState?.(data)
+          else if (event === 'image_progress') callbacks.onImageProgress?.(data.pct ?? 0)
+          else if (event === 'image') callbacks.onImage?.(data.data_b64 ?? '')
           else if (event === 'done') callbacks.onDone()
         } catch {}
         event = ''

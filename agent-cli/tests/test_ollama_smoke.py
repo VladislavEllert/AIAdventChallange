@@ -60,3 +60,20 @@ def test_ollama_tags_lists_qwen3():
     resp.raise_for_status()
     names = [m["name"] for m in resp.json().get("models", [])]
     assert any("qwen3" in n for n in names)
+
+
+def test_dispatch_provider_routes_ollama_model_live():
+    """Day 27: DispatchProvider('ollama/qwen3:4b') must reach the real box,
+    not just the raw OpenAI client used above."""
+    from unittest.mock import MagicMock
+    from agent_cli.llm.dispatch import DispatchProvider
+    from agent_cli.llm.ollama import OllamaProvider
+
+    # Force OllamaProvider to read the freshly-loaded OLLAMA_CHAT_URL rather
+    # than whatever agent_cli.config cached at its own import time.
+    ollama = OllamaProvider.__new__(OllamaProvider)
+    ollama.client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL)
+
+    d = DispatchProvider(proxyapi=MagicMock(), ollama=ollama)
+    text = d.chat([{"role": "user", "content": "Say 'ok' and nothing else."}], "ollama/qwen3:4b")
+    assert text.strip() != ""

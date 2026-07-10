@@ -22,6 +22,7 @@ from agent_web.services.mcp_client import get_tools_sync, call_tool_sync, TOOL_L
 from agent_web.services.rag.retriever import search as rag_search
 from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSWER
 from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
+from agent_web.services import comfyui_client
 
 router = APIRouter(tags=["chat"])
 
@@ -82,6 +83,31 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         from datetime import datetime as _dt
 
         msg = req.message.strip()
+
+        # ── Image model (comfyui/*) — separate protocol, not token-streamed ─
+        if msg and not msg.startswith("/") and cfg.get_model_type(agent.model) == "image":
+            agent.memory.add_message("user", msg)
+            image_b64 = None
+            try:
+                for event in comfyui_client.generate(cfg.COMFYUI_URL, msg):
+                    if event["type"] == "progress":
+                        yield _sse_event("image_progress", {"pct": event["pct"]})
+                    elif event["type"] == "image":
+                        image_b64 = event["data_b64"]
+                        yield _sse_event("image", {"data_b64": image_b64})
+                    elif event["type"] == "error":
+                        yield _sse_event("chunk", {"text": f"❌ {event['message']}"})
+            except Exception as e:
+                yield _sse_event("chunk", {"text": f"❌ ComfyUI error: {e}"})
+            agent.memory.add_message("assistant", "[generated image]" if image_b64 else "[generation failed]")
+            yield _sse_event("usage", {
+                "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                "cost_rub": 0.0, "elapsed_ms": 0,
+            })
+            manager.save(req.session_id)
+            yield _sse_event("done", {})
+            return
+        # ─────────────────────────────────────────────────────────────────
 
         # ── /mcp — list available tools ───────────────────────────────────
         if msg.lower() in ("/mcp", "/mcp tools", "/mcp list"):
@@ -266,8 +292,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 # Day 23: query rewrite — short LLM call to expand/clarify query
                 rewritten_query = msg
                 try:
-                    rw_resp = agent.provider.client.chat.completions.create(
-                        model=agent.model,
+                    rw_client, rw_model = agent.provider.client_for(agent.model)
+                    rw_resp = rw_client.chat.completions.create(
+                        model=rw_model,
                         messages=[
                             {"role": "system", "content": (
                                 "Translate the user's question to English if needed, then rewrite it "
@@ -288,6 +315,7 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                     agent.provider,
                     agent.memory.short_term[-12:],
                     agent.memory.working or {},
+                    model=agent.model,
                 )
                 agent.memory.working = task_state
 
@@ -432,8 +460,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 # Remove get_current_datetime from tool_schemas — handled above
                 tool_schemas_for_llm = [t for t in tool_schemas
                                         if t["function"]["name"] != "get_current_datetime"]
-                tool_response = agent.provider.client.chat.completions.create(
-                    model=agent.model,
+                tc_client, tc_model = agent.provider.client_for(agent.model)
+                tool_response = tc_client.chat.completions.create(
+                    model=tc_model,
                     messages=all_messages,
                     tools=tool_schemas_for_llm or None,
                     tool_choice="auto" if tool_schemas_for_llm else "none",
@@ -450,8 +479,8 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                         # Reuse the already-made first call
                         cur_choice = choice
                     else:
-                        tool_resp_n = agent.provider.client.chat.completions.create(
-                            model=agent.model,
+                        tool_resp_n = tc_client.chat.completions.create(
+                            model=tc_model,
                             messages=extra_messages,
                             tools=tool_schemas_for_llm or None,
                             tool_choice="auto" if tool_schemas_for_llm else "none",

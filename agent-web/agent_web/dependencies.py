@@ -1,4 +1,4 @@
-from agent_cli.llm.proxyapi import ProxyAPIProvider
+from agent_cli.llm.dispatch import DispatchProvider
 from agent_cli.llm.provider import LLMProvider
 from agent_cli.core.sessions import SessionStore
 from agent_cli.config import SESSIONS_DB
@@ -15,7 +15,7 @@ _rag_index: list[Chunk] | None = None
 def get_provider() -> LLMProvider:
     global _provider
     if _provider is None:
-        _provider = ProxyAPIProvider()
+        _provider = DispatchProvider()
     return _provider
 
 

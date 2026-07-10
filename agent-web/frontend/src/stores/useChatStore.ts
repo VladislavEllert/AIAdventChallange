@@ -33,6 +33,8 @@ export interface Message {
   sources?: Source[]
   ragMeta?: RagMeta
   taskState?: TaskState
+  generatedImageB64?: string
+  imageProgressPct?: number
 }
 
 interface ChatStore {
@@ -49,6 +51,8 @@ interface ChatStore {
   appendSources: (id: string, sources: Source[]) => void
   appendRagMeta: (id: string, meta: RagMeta) => void
   appendTaskState: (id: string, ts: TaskState) => void
+  setImageProgress: (id: string, pct: number) => void
+  setGeneratedImage: (id: string, dataB64: string) => void
   setStreaming: (v: boolean) => void
   addCost: (u: ChatUsage) => void
   setViolation: (v: { invariant: string; desc: string } | null) => void
@@ -101,6 +105,20 @@ export const useChatStore = create<ChatStore>((set) => ({
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === id ? { ...m, taskState: ts } : m
+      ),
+    })),
+
+  setImageProgress: (id, pct) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, imageProgressPct: pct } : m
+      ),
+    })),
+
+  setGeneratedImage: (id, dataB64) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, generatedImageB64: dataB64, streaming: false, imageProgressPct: 100 } : m
       ),
     })),
 

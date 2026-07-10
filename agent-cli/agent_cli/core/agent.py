@@ -111,11 +111,10 @@ class Agent:
         Call list(chunk_iter) to drive it, then read stats_ref.usage.
         Only works if provider supports chat_stream_with_stats.
         """
-        from agent_cli.llm.proxyapi import ProxyAPIProvider
         self._try_summarize()
         messages = self._build_messages(user_input, working_context)
 
-        if isinstance(self.provider, ProxyAPIProvider):
+        if hasattr(self.provider, "chat_stream_with_stats"):
             chunk_iter, ref = self.provider.chat_stream_with_stats(messages, self.model)
 
             def _tracked():
