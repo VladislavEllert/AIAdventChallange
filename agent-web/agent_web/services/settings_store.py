@@ -8,7 +8,7 @@ _SETTINGS_PATH = _DATA_DIR / "settings.json"
 _DEFAULTS: dict = {
     "short_term_limit": 16,
     "keep_recent": 8,
-    "default_model": "openai/gpt-4o-mini",
+    "default_model": "ollama/qwen3:4b",
     "auto_profile_update": False,
     "theme": "system",
     # Day 29: text generation params (applied to every chat call, both providers)

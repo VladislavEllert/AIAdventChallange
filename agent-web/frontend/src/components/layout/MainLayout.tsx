@@ -22,6 +22,7 @@ export default function MainLayout() {
   const setRagEnabled = useAppStore((s) => s.setRagEnabled)
   const mcpEnabled = useAppStore((s) => s.mcpEnabled)
   const setMcpEnabled = useAppStore((s) => s.setMcpEnabled)
+  const activeSessionId = useAppStore((s) => s.activeSessionId)
   const violation = useChatStore((s) => s.violation)
   const clearViolation = useChatStore((s) => s.clearViolation)
 
@@ -172,8 +173,8 @@ export default function MainLayout() {
             </div>
           )}
 
-          {/* Input */}
-          <ChatInput />
+          {/* Input — hidden until a session exists, nothing to send to */}
+          {activeSessionId && <ChatInput />}
         </div>
 
         {/* Right panel */}

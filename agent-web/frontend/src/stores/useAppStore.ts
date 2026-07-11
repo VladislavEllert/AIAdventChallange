@@ -36,7 +36,7 @@ export const useAppStore = create<AppStore>()(
       setTheme: (theme) => set({ theme }),
       activeSessionId: null,
       setActiveSessionId: (id) => set({ activeSessionId: id }),
-      activeModel: 'openai/gpt-4o-mini',
+      activeModel: 'ollama/qwen3:4b',
       setActiveModel: (m) => set({ activeModel: m }),
       activeAgentId: null,
       activeAgentPersona: '',

@@ -1062,7 +1062,7 @@ def test_tui_run_clear_command():
 
 def test_tui_run_model_show():
     tui = _run_tui_with_inputs(["/model", "/exit"])
-    assert tui.model == "openai/gpt-4o-mini"
+    assert tui.model == "ollama/qwen3:4b"
 
 
 def test_tui_run_model_change():
@@ -1202,9 +1202,18 @@ def test_session_stats_add_and_total():
 
 def test_config_get_pricing_known_model():
     from agent_cli.config import get_pricing
+    p = get_pricing("ollama/qwen3:4b")
+    assert p["input"] == 0.0
+    assert p["output"] == 0.0
+
+
+def test_config_get_pricing_unknown_model_falls_back_to_default():
+    # openai/* was removed from the picker (local models only, week 6) —
+    # get_pricing() must not crash on it, just use the generic fallback.
+    from agent_cli.config import get_pricing
     p = get_pricing("openai/gpt-4o-mini")
-    assert p["input"] == 0.015
-    assert p["output"] == 0.06
+    assert p["input"] == 0.05
+    assert p["output"] == 0.15
 
 
 def test_config_get_pricing_unknown_model():
@@ -1215,9 +1224,9 @@ def test_config_get_pricing_unknown_model():
 
 def test_config_calc_cost_rub():
     from agent_cli.config import calc_cost_rub
-    # gpt-4o-mini: 1000 input × 0.015/1K + 500 output × 0.06/1K = 0.015 + 0.030 = 0.045
-    cost = calc_cost_rub(1000, 500, "openai/gpt-4o-mini")
-    assert abs(cost - 0.045) < 1e-9
+    # qwen3:4b is local — always free.
+    cost = calc_cost_rub(1000, 500, "ollama/qwen3:4b")
+    assert cost == 0.0
 
 
 def test_proxyapi_chat_with_stats():

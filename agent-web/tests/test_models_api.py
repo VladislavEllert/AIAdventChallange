@@ -7,8 +7,11 @@ def test_list_models(client):
     models = r.json()
     assert len(models) == len(_MODEL_PRICING)
     model_ids = [m["model_id"] for m in models]
-    assert "openai/gpt-4o-mini" in model_ids
-    assert "gemini/gemini-2.5-flash-lite" in model_ids
+    # ProxyAPI (openai/*, gemini/*) removed from the picker by request —
+    # only local models selectable.
+    assert "ollama/qwen3:4b" in model_ids
+    assert "comfyui/sdxl" in model_ids
+    assert not any(m.startswith("openai/") or m.startswith("gemini/") for m in model_ids)
 
 
 def test_models_have_prices(client):

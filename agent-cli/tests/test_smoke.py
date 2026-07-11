@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 def test_imports_config():
     from agent_cli.config import DEFAULT_MODEL, BASE_URL, PROXYAPI_KEY
-    assert DEFAULT_MODEL == "openai/gpt-4o-mini"
+    assert DEFAULT_MODEL == "ollama/qwen3:4b"
     assert "proxyapi" in BASE_URL
 
 

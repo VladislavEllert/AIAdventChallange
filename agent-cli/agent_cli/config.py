@@ -14,7 +14,7 @@ load_dotenv()
 
 PROXYAPI_KEY: str = os.getenv("PROXYAPI_KEY", "")
 BASE_URL: str = "https://openai.api.proxyapi.ru/v1"
-DEFAULT_MODEL: str = "openai/gpt-4o-mini"
+DEFAULT_MODEL: str = "ollama/qwen3:4b"
 
 OLLAMA_CHAT_URL: str = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/v1")
 COMFYUI_URL: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
@@ -27,17 +27,15 @@ TASKS_DIR = str(_ROOT / "data" / "tasks")
 INVARIANTS_DIR = str(_ROOT / "data" / "invariants")
 SESSIONS_DB = str(_ROOT / "data" / "sessions.db")
 
-# Pricing per 1K tokens in rubles (ProxyAPI, approximate — verify at proxyapi.ru/prices)
-# "type": text models stream tokens like any LLMProvider; image models go through
-# a separate non-token path (ComfyUI) — see agent_web/services/comfyui_client.py.
+# Pricing per 1K tokens in rubles. "type": text models stream tokens like any
+# LLMProvider; image models go through a separate non-token path (ComfyUI) —
+# see agent_web/services/comfyui_client.py.
+#
+# ProxyAPI (openai/*, gemini/*) entries removed from the picker by request —
+# only local models selectable now. ProxyAPIProvider/DispatchProvider routing
+# code is untouched (still there if cloud models come back), this just hides
+# them from GET /models.
 _MODEL_PRICING: dict[str, dict] = {
-    "openai/gpt-4o-mini":      {"input": 0.015,  "output": 0.06, "type": "text"},
-    "openai/gpt-4o":           {"input": 0.25,   "output": 1.00, "type": "text"},
-    "openai/gpt-4.1":          {"input": 0.20,   "output": 0.80, "type": "text"},
-    "openai/gpt-4.1-mini":     {"input": 0.02,   "output": 0.08, "type": "text"},
-    "openai/o3-mini":          {"input": 0.50,   "output": 2.00, "type": "text"},
-    "gemini/gemini-2.5-flash-lite": {"input": 0.005, "output": 0.02, "type": "text"},
-    "gemini/gemini-2.5-flash": {"input": 0.015,  "output": 0.06, "type": "text"},
     "ollama/qwen3:4b":         {"input": 0.0,    "output": 0.0,  "type": "text"},
     "comfyui/sdxl":            {"input": 0.0,    "output": 0.0,  "type": "image"},
 }

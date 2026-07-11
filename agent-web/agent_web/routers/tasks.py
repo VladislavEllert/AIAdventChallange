@@ -55,7 +55,7 @@ async def create_task(
     manager: AgentManager = Depends(get_manager),
 ):
     settings = load_settings()
-    model = body.model or settings.get("default_model", "openai/gpt-4o-mini")
+    model = body.model or settings.get("default_model", "ollama/qwen3:4b")
 
     task = TaskState.new(body.request)
     task.model = model

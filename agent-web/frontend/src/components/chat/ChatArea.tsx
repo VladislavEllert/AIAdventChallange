@@ -1,16 +1,36 @@
 import { useEffect, useRef } from 'react'
 import { useChatStore } from '../../stores/useChatStore'
+import { useAppStore } from '../../stores/useAppStore'
 import MessageBubble from './MessageBubble'
 
 export default function ChatArea() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const toolStatus = useChatStore((s) => s.toolStatus)
+  const activeSessionId = useAppStore((s) => s.activeSessionId)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, isStreaming])
+
+  if (!activeSessionId) {
+    return (
+      <div
+        style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: 16, userSelect: 'none',
+        }}
+      >
+        <div style={{ fontSize: 40, opacity: 0.3 }}>✦</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 15 }}>Выбери или создай сессию</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 12, opacity: 0.6 }}>
+          «+ Новый чат» слева
+        </div>
+      </div>
+    )
+  }
 
   if (messages.length === 0) {
     return (

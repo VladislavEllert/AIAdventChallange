@@ -580,12 +580,32 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         # ─────────────────────────────────────────────────────────────────
 
         if not tool_used:
-            chunk_iter, ref = agent.respond_stream_with_stats(
-                req.message, **_text_gen_kwargs(agent.model)
-            )
-            for chunk in chunk_iter:
-                yield _sse_event("chunk", {"text": chunk})
-            usage = ref.usage
+            try:
+                chunk_iter, ref = agent.respond_stream_with_stats(
+                    req.message, **_text_gen_kwargs(agent.model)
+                )
+                got_any_chunk = False
+                for chunk in chunk_iter:
+                    got_any_chunk = True
+                    yield _sse_event("chunk", {"text": chunk})
+                usage = ref.usage
+                if not got_any_chunk:
+                    # Stream "succeeded" but produced nothing — e.g. Qwen3's
+                    # <think> ate the whole token budget (day 28 finding).
+                    # Show something rather than a silently empty bubble.
+                    yield _sse_event("chunk", {"text": "⚠️ Модель не вернула ответ (пустой content — возможно, не уложилась в лимит токенов на размышление)."})
+            except Exception as e:
+                # Model unreachable/timed out/errored — this used to fail
+                # silently: no chunk, no error, the assistant bubble just sat
+                # there empty forever. Surface it instead.
+                yield _sse_event("chunk", {"text": f"❌ Не удалось получить ответ от модели `{agent.model}`: {e}"})
+                yield _sse_event("usage", {
+                    "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                    "cost_rub": 0.0, "elapsed_ms": 0,
+                })
+                manager.save(req.session_id)
+                yield _sse_event("done", {})
+                return
 
         # ── Invariant check ───────────────────────────────────────────────
         if invariants:

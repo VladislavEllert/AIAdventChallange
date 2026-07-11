@@ -57,15 +57,26 @@ export async function streamChat(
   use_rag?: boolean,
   use_mcp?: boolean,
 ): Promise<void> {
-  const resp = await fetch(`${BASE}/chat/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id, message, image_b64, persona, model, profile_name, use_rag, use_mcp }),
-    signal,
-  })
+  let resp: Response
+  try {
+    resp = await fetch(`${BASE}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id, message, image_b64, persona, model, profile_name, use_rag, use_mcp }),
+      signal,
+    })
+  } catch (e: unknown) {
+    // Network failure before we even got a response (server down, LAN drop, ...).
+    // Unhandled here previously left isStreaming stuck true forever — every
+    // future send silently no-op'd until a full page reload.
+    if (e instanceof Error && e.name !== 'AbortError') callbacks.onError(e)
+    callbacks.onDone()
+    return
+  }
 
   if (!resp.ok || !resp.body) {
     callbacks.onError(new Error(`HTTP ${resp.status}`))
+    callbacks.onDone()
     return
   }
 

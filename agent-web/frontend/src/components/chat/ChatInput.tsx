@@ -367,6 +367,10 @@ export default function ChatInput() {
         onImage: (dataB64) => setGeneratedImage(assistantId, dataB64),
         onDone: () => { setToolStatus(null); setStreaming(false); abortRef.current = null },
         onError: (e) => {
+          // Network-level failure (server unreachable, connection dropped) —
+          // this used to only console.error and leave the bubble empty with
+          // no visible feedback. Show something instead of silence.
+          appendChunk(assistantId, `❌ Не удалось связаться с сервером: ${e.message}`)
           finalizeMessage(assistantId, { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost_rub: 0, elapsed_ms: 0 })
           setStreaming(false)
           abortRef.current = null
