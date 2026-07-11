@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 type Theme = 'system' | 'light' | 'dark'
-type RightTab = 'memory' | 'task' | 'invariants' | 'profiles'
+type RightTab = 'memory' | 'task' | 'invariants' | 'profiles' | 'settings'
 
 interface AppStore {
   theme: Theme
@@ -18,6 +18,7 @@ interface AppStore {
   setActiveProfileName: (name: string | null) => void
   sidebarOpen: boolean
   toggleSidebar: () => void
+  setSidebarOpen: (v: boolean) => void
   rightPanelOpen: boolean
   toggleRightPanel: () => void
   rightPanelTab: RightTab
@@ -44,6 +45,7 @@ export const useAppStore = create<AppStore>()(
       setActiveProfileName: (activeProfileName) => set({ activeProfileName }),
       sidebarOpen: true,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       rightPanelOpen: false,
       toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
       rightPanelTab: 'memory',

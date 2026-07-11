@@ -18,6 +18,7 @@ DEFAULT_MODEL: str = "openai/gpt-4o-mini"
 
 OLLAMA_CHAT_URL: str = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/v1")
 COMFYUI_URL: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
+METRICS_URL: str = os.getenv("METRICS_URL", "http://localhost:11435/metrics")
 
 _ROOT = Path(__file__).parent.parent
 DATA_DIR = str(_ROOT / "data")

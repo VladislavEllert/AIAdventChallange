@@ -104,18 +104,20 @@ class Agent:
         self.memory.add_message("assistant", full)
 
     def respond_stream_with_stats(
-        self, user_input: str, working_context: str = ""
+        self, user_input: str, working_context: str = "", **gen_kwargs
     ) -> "tuple[Iterator[str], object]":
         """
         Returns (chunk_iter, stats_ref) for streaming with real token counts.
         Call list(chunk_iter) to drive it, then read stats_ref.usage.
         Only works if provider supports chat_stream_with_stats.
+        gen_kwargs (temperature/max_tokens/top_p/extra_body/...) pass straight
+        through to the provider's completion call.
         """
         self._try_summarize()
         messages = self._build_messages(user_input, working_context)
 
         if hasattr(self.provider, "chat_stream_with_stats"):
-            chunk_iter, ref = self.provider.chat_stream_with_stats(messages, self.model)
+            chunk_iter, ref = self.provider.chat_stream_with_stats(messages, self.model, **gen_kwargs)
 
             def _tracked():
                 full = ""

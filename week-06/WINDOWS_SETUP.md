@@ -11,8 +11,14 @@
 >   ```
 >   OLLAMA_CHAT_URL=http://192.168.0.33:11434/v1
 >   COMFYUI_URL=http://192.168.0.33:8188
->   METRICS_URL=http://192.168.0.33:11435/metrics   # metrics_server.py ещё не существует — пишет Mac-сессия
+>   METRICS_URL=http://192.168.0.33:11435/metrics
 >   ```
+> - **Метрик-агент готов (день 29):** `week-06/metrics_server.py` написан и живьём проверен на маке
+>   (CPU/RAM реальные, GPU/VRAM/nvidia-smi/ollama_models — код есть, но НЕ проверен на самом Windows,
+>   т.к. эта Mac-сессия не имеет туда терминального доступа. На Windows нужно: `pip install psutil`,
+>   затем `python week-06\metrics_server.py`, проверить `curl http://localhost:11435/metrics`
+>   возвращает реальные `gpu_pct`/`vram_used_gb` (не `null`) — если `null`, значит `nvidia-smi` не
+>   на PATH, разобраться отдельно.
 > - **Firewall:** 3 правила созданы вручную юзером через elevated PowerShell (агент не может пройти
 >   UAC в неинтерактивной сессии) — `Ollama 11434`, `ComfyUI 8188`, `Metrics 11435`.
 > - **Гочта с pip:** на этом ПК системный SOCKS-прокси в `HKCU\...\Internet Settings`

@@ -93,11 +93,10 @@ money).
 
 ## Honest gaps
 
-- Frontend viewport screenshots (mobile 390×844 / desktop 1440×900) were **not captured** —
-  no headless-browser tool available in this environment. TypeScript compiles clean and
-  `npm run build` succeeds; backend was driven and verified for real over SSE. The actual
-  in-browser check (image renders, progress bar animates, picker badge shows correctly) is
-  still open — dev server is up at the LAN link below for you to check from your phone.
+- ~~Frontend viewport screenshots not captured~~ — **resolved in day 29**: Playwright got
+  installed, real screenshots taken at both 390×844 and 1440×900, and mobile turned out to be
+  genuinely broken (sidebar full-width, chat squeezed to ~130px). Fixed there, not here — see
+  [`week-06/day-29`](../day-29/).
 - Model-picker badge (💬/🖼) and placeholder swap are implemented but only unit-verified via
   TypeScript; not clicked through in a real browser session.
 

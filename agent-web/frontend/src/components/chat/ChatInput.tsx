@@ -7,6 +7,7 @@ import { createSession } from '../../api/sessions'
 import { listInvariants, addInvariant } from '../../api/invariants'
 import { listProfiles, getProfile } from '../../api/profiles'
 import { getMemory } from '../../api/memory'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 // All slash commands from CLI
 const SLASH_COMMANDS = [
@@ -51,6 +52,7 @@ const HISTORY_PERIODS = [
 
 
 export default function ChatInput() {
+  const isMobile = useIsMobile()
   const [text, setText] = useState('')
   const [imageB64, setImageB64] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -567,7 +569,7 @@ export default function ChatInput() {
       <div className="glass" style={{ borderRadius: 16, padding: '10px 10px 10px 14px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: 'var(--shadow-md)' }}>
         {/* Attach */}
         <button onClick={() => fileRef.current?.click()} disabled={isStreaming} title="Прикрепить файл"
-          style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
+          style={{ width: isMobile ? 44 : 32, height: isMobile ? 44 : 32, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'color 0.15s' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-tertiary)')}
         >
@@ -591,7 +593,8 @@ export default function ChatInput() {
           rows={1}
           style={{
             flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none',
-            color: 'var(--text-primary)', fontSize: 14, lineHeight: 1.6,
+            // iOS Safari auto-zooms the page on focus if font-size < 16px — keep it at 16 on mobile.
+            color: 'var(--text-primary)', fontSize: isMobile ? 16 : 14, lineHeight: 1.6,
             minHeight: 24, maxHeight: 200, fontFamily: 'inherit',
           }}
         />
@@ -602,7 +605,7 @@ export default function ChatInput() {
             onClick={stopStreaming}
             title="Остановить"
             style={{
-              width: 34, height: 34, borderRadius: 8,
+              width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, borderRadius: 8,
               background: 'var(--accent)', color: '#fff',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0, transition: 'all 0.15s', border: 'none',
@@ -617,7 +620,7 @@ export default function ChatInput() {
           /* Send button */
           <button onClick={send} disabled={!canSend}
             style={{
-              width: 34, height: 34, borderRadius: '50%',
+              width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, borderRadius: '50%',
               background: canSend ? 'var(--accent)' : 'var(--bg-surface)',
               color: canSend ? '#fff' : 'var(--text-tertiary)',
               cursor: canSend ? 'pointer' : 'not-allowed',

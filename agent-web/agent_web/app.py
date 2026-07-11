@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from agent_web.routers import chat, sessions, models, agents, memory, invariants, profiles, tasks, settings
+from agent_web.routers import chat, sessions, models, agents, memory, invariants, profiles, tasks, settings, metrics
 
 
 @asynccontextmanager
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(profiles.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
+    app.include_router(metrics.router, prefix="/api")
 
     @app.get("/api/health")
     def health():

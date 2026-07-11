@@ -12,6 +12,18 @@ class SettingsPatch(BaseModel):
     default_model: str | None = None
     auto_profile_update: bool | None = None
     theme: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
+    num_ctx: int | None = None
+    image_steps: int | None = None
+    image_cfg: float | None = None
+    image_seed: int | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    # image_seed needs an explicit "clear to random" — None from Pydantic is
+    # indistinguishable from "field omitted", so a bool flag does the clearing.
+    image_seed_random: bool | None = None
 
 
 @router.get("")
@@ -21,5 +33,8 @@ def get_settings():
 
 @router.put("")
 def update_settings(body: SettingsPatch):
-    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    patch = {k: v for k, v in body.model_dump().items()
+             if v is not None and k != "image_seed_random"}
+    if body.image_seed_random:
+        patch["image_seed"] = None
     return save_settings(patch)

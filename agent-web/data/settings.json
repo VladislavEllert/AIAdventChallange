@@ -3,5 +3,14 @@
   "keep_recent": 8,
   "default_model": "openai/gpt-4o-mini",
   "auto_profile_update": false,
-  "theme": "system"
+  "theme": "system",
+  "temperature": 0.7,
+  "max_tokens": 2048,
+  "top_p": 1.0,
+  "num_ctx": 4096,
+  "image_steps": 20,
+  "image_cfg": 8.0,
+  "image_seed": null,
+  "image_width": 1024,
+  "image_height": 1024
 }

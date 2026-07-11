@@ -11,6 +11,17 @@ _DEFAULTS: dict = {
     "default_model": "openai/gpt-4o-mini",
     "auto_profile_update": False,
     "theme": "system",
+    # Day 29: text generation params (applied to every chat call, both providers)
+    "temperature": 0.7,
+    "max_tokens": 1024,
+    "top_p": 1.0,
+    "num_ctx": 4096,  # Ollama-only (extra_body); ignored by ProxyAPI models
+    # Day 29: image generation params (SDXL/ComfyUI only)
+    "image_steps": 20,
+    "image_cfg": 8.0,
+    "image_seed": None,  # None = random each generation
+    "image_width": 1024,
+    "image_height": 1024,
 }
 
 

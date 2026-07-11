@@ -1,5 +1,6 @@
 import { useAppStore } from '../../stores/useAppStore'
 import { useChatStore } from '../../stores/useChatStore'
+import MetricsHud from './MetricsHud'
 
 export default function StatusBar() {
   const activeSessionId = useAppStore((s) => s.activeSessionId)
@@ -34,6 +35,8 @@ export default function StatusBar() {
       )}
       <span style={{ color: 'var(--border)' }}>│</span>
       <span>₽ {sessionCost.toFixed(4)}</span>
+      <span style={{ flex: 1 }} />
+      <MetricsHud />
     </div>
   )
 }

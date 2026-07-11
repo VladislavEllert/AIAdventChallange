@@ -6,10 +6,13 @@ import ChatInput from '../chat/ChatInput'
 import RightPanel from '../panels/RightPanel'
 import { useAppStore } from '../../stores/useAppStore'
 import { useChatStore } from '../../stores/useChatStore'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 export default function MainLayout() {
+  const isMobile = useIsMobile()
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel)
   const activeAgentPersona = useAppStore((s) => s.activeAgentPersona)
@@ -38,6 +41,13 @@ export default function MainLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [toggleRightPanel])
 
+  // Sidebar defaults open (desktop preference, persisted) — on a phone that
+  // would cover the whole screen on first load. Auto-close once on mobile.
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-gradient)' }}>
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -56,26 +66,30 @@ export default function MainLayout() {
             {!sidebarOpen && (
               <button onClick={toggleSidebar} title="Открыть боковую панель"
                 style={{
-                  width: 32, height: 32, borderRadius: 8,
+                  width: isMobile ? 44 : 32, height: isMobile ? 44 : 32, borderRadius: 8,
                   border: '1px solid var(--border)', background: 'transparent',
                   color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 15,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>☰</button>
             )}
 
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}>
-              {activeAgentPersona
-                ? <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦ Custom agent</span>
-                : 'Чат'
-              }
-            </span>
+            {!isMobile && (
+              <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}>
+                {activeAgentPersona
+                  ? <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦ Custom agent</span>
+                  : 'Чат'
+                }
+              </span>
+            )}
+            {isMobile && <span style={{ flex: 1 }} />}
 
             {/* RAG toggle */}
             <button
               onClick={() => setRagEnabled(!ragEnabled)}
               title={ragEnabled ? 'RAG включён (GitLab Handbook)' : 'RAG выключен'}
               style={{
-                height: 28, padding: '0 10px', borderRadius: 8,
+                height: isMobile ? 40 : 28, minWidth: isMobile ? 44 : undefined,
+                padding: '0 10px', borderRadius: 8,
                 border: `1px solid ${ragEnabled ? 'var(--accent)' : 'var(--border)'}`,
                 background: ragEnabled ? 'var(--accent-bg)' : 'transparent',
                 color: ragEnabled ? 'var(--accent)' : 'var(--text-tertiary)',
@@ -83,7 +97,7 @@ export default function MainLayout() {
                 transition: 'all 0.15s', flexShrink: 0,
               }}
             >
-              {ragEnabled ? '◈ RAG' : '◇ RAG'}
+              {isMobile ? (ragEnabled ? '◈' : '◇') : (ragEnabled ? '◈ RAG' : '◇ RAG')}
             </button>
 
             {/* MCP toggle */}
@@ -91,7 +105,8 @@ export default function MainLayout() {
               onClick={() => setMcpEnabled(!mcpEnabled)}
               title={mcpEnabled ? 'MCP включён (инструменты)' : 'MCP выключен'}
               style={{
-                height: 28, padding: '0 10px', borderRadius: 8,
+                height: isMobile ? 40 : 28, minWidth: isMobile ? 44 : undefined,
+                padding: '0 10px', borderRadius: 8,
                 border: `1px solid ${mcpEnabled ? '#f59e0b' : 'var(--border)'}`,
                 background: mcpEnabled ? 'rgba(245,158,11,0.12)' : 'transparent',
                 color: mcpEnabled ? '#f59e0b' : 'var(--text-tertiary)',
@@ -99,17 +114,21 @@ export default function MainLayout() {
                 transition: 'all 0.15s', flexShrink: 0,
               }}
             >
-              {mcpEnabled ? '⚡ MCP' : '○ MCP'}
+              {isMobile ? (mcpEnabled ? '⚡' : '○') : (mcpEnabled ? '⚡ MCP' : '○ MCP')}
             </button>
 
-            {/* Right panel toggle buttons */}
+            {/* Right panel toggle buttons — on mobile, one button opens the panel (it has its own tab bar) */}
             <div style={{ display: 'flex', gap: 4 }}>
-              {[
-                { icon: '🧠', title: 'Память', tab: 'memory' as const },
-                { icon: '⚙️', title: 'Задача FSM', tab: 'task' as const },
-                { icon: '🛡', title: 'Инварианты', tab: 'invariants' as const },
-                { icon: '👤', title: 'Профиль', tab: 'profiles' as const },
-              ].map(({ icon, title, tab }) => {
+              {(isMobile
+                ? [{ icon: '☰', title: 'Панели', tab: rightPanelTab }]
+                : [
+                    { icon: '🧠', title: 'Память', tab: 'memory' as const },
+                    { icon: '⚙️', title: 'Задача FSM', tab: 'task' as const },
+                    { icon: '🛡', title: 'Инварианты', tab: 'invariants' as const },
+                    { icon: '👤', title: 'Профиль', tab: 'profiles' as const },
+                    { icon: '🎛', title: 'Настройки', tab: 'settings' as const },
+                  ]
+              ).map(({ icon, title, tab }) => {
                 const isActive = rightPanelOpen && rightPanelTab === tab
                 return (
                   <button key={tab}
@@ -123,7 +142,7 @@ export default function MainLayout() {
                     }}
                     title={title}
                     style={{
-                      width: 32, height: 32, borderRadius: 8, border: 'none',
+                      width: isMobile ? 44 : 32, height: isMobile ? 44 : 32, borderRadius: 8, border: 'none',
                       background: isActive ? 'var(--accent-bg)' : 'transparent',
                       color: isActive ? 'var(--accent)' : 'var(--text-tertiary)',
                       cursor: 'pointer', fontSize: 16,

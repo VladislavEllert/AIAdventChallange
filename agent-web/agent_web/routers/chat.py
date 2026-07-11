@@ -23,12 +23,28 @@ from agent_web.services.rag.retriever import search as rag_search
 from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSWER
 from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
 from agent_web.services import comfyui_client
+from agent_web.services.settings_store import load_settings
 
 router = APIRouter(tags=["chat"])
 
 
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _text_gen_kwargs(model: str) -> dict:
+    """Day 29: user-tunable generation params, applied to every text completion.
+    num_ctx (context window) is Ollama-specific — passed via extra_body, ignored
+    by ProxyAPI models."""
+    s = load_settings()
+    kwargs = {
+        "temperature": s.get("temperature", 0.7),
+        "max_tokens": s.get("max_tokens", 2048),
+        "top_p": s.get("top_p", 1.0),
+    }
+    if model.startswith("ollama/"):
+        kwargs["extra_body"] = {"options": {"num_ctx": s.get("num_ctx", 4096)}}
+    return kwargs
 
 
 def _load_invariant_strings() -> list[str]:
@@ -88,8 +104,16 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         if msg and not msg.startswith("/") and cfg.get_model_type(agent.model) == "image":
             agent.memory.add_message("user", msg)
             image_b64 = None
+            s = load_settings()
             try:
-                for event in comfyui_client.generate(cfg.COMFYUI_URL, msg):
+                for event in comfyui_client.generate(
+                    cfg.COMFYUI_URL, msg,
+                    seed=s.get("image_seed"),
+                    steps=s.get("image_steps", 20),
+                    cfg=s.get("image_cfg", 8.0),
+                    width=s.get("image_width", 1024),
+                    height=s.get("image_height", 1024),
+                ):
                     if event["type"] == "progress":
                         yield _sse_event("image_progress", {"pct": event["pct"]})
                     elif event["type"] == "image":
@@ -248,7 +272,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 f"какой сигнал (BUY/SELL/HOLD) и почему. 3-5 предложений."
             )
             report_text = ""
-            chunk_iter_a, ref_a = agent.provider.chat_stream_with_stats(analysis_prompt, agent.model)
+            chunk_iter_a, ref_a = agent.provider.chat_stream_with_stats(
+                analysis_prompt, agent.model, **_text_gen_kwargs(agent.model)
+            )
             for chunk in chunk_iter_a:
                 report_text += chunk
                 yield _sse_event("chunk", {"text": chunk})
@@ -399,7 +425,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 # Append task state + RAG instruction to system message
                 messages[0] = {**messages[0], "content": messages[0]["content"] + task_state_block + rag_system_suffix}
 
-                chunk_iter, ref = agent.provider.chat_stream_with_stats(messages, agent.model)
+                chunk_iter, ref = agent.provider.chat_stream_with_stats(
+                    messages, agent.model, **_text_gen_kwargs(agent.model)
+                )
                 full_response = ""
                 for chunk in chunk_iter:
                     full_response += chunk
@@ -498,7 +526,7 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                     if cur_choice.finish_reason != "tool_calls" or not cur_choice.message.tool_calls:
                         # LLM has final answer — stream it
                         chunk_iter_f, ref_f = agent.provider.chat_stream_with_stats(
-                            extra_messages, agent.model
+                            extra_messages, agent.model, **_text_gen_kwargs(agent.model)
                         )
                         full_response = ""
                         for chunk in chunk_iter_f:
@@ -551,7 +579,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         # ─────────────────────────────────────────────────────────────────
 
         if not tool_used:
-            chunk_iter, ref = agent.respond_stream_with_stats(req.message)
+            chunk_iter, ref = agent.respond_stream_with_stats(
+                req.message, **_text_gen_kwargs(agent.model)
+            )
             for chunk in chunk_iter:
                 yield _sse_event("chunk", {"text": chunk})
             usage = ref.usage
