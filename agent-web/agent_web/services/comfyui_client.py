@@ -75,7 +75,9 @@ def generate(
     client_id = str(uuid.uuid4())
     wf = build_prompt(prompt, negative, seed, steps, cfg, width, height)
 
-    with httpx.Client(timeout=10.0) as http:
+    # trust_env=False: bypass a system SOCKS proxy (VPN software) that otherwise
+    # breaks this local ComfyUI call on Windows with "Unknown scheme for proxy URL".
+    with httpx.Client(timeout=10.0, trust_env=False) as http:
         try:
             resp = http.post(f"{base_url}/prompt", json={"prompt": wf, "client_id": client_id})
             resp.raise_for_status()

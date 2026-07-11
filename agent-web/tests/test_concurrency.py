@@ -17,7 +17,13 @@ def test_parallel_requests_stay_isolated_per_session(client):
 
     def _run(sid: str):
         try:
-            resp = client.post("/api/chat/stream", json={"session_id": sid, "message": f"hello from {sid}"})
+            # use_mcp=False: this test is about session isolation, not MCP — with
+            # MCP on, 5 threads each do a real network round-trip to the VPS
+            # tool server, which can occasionally outrun the 10s join() below
+            # (MCP correctness has its own coverage in test_mcp_client.py).
+            resp = client.post("/api/chat/stream", json={
+                "session_id": sid, "message": f"hello from {sid}", "use_mcp": False,
+            })
             results[sid] = {"status": resp.status_code, "text": resp.text}
         except Exception as e:
             errors.append(e)

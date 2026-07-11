@@ -28,7 +28,10 @@ def get_metrics():
         # just goes unanswered until this timeout fires. 3s here made every
         # single poll (every 2s from the frontend) take a full 3s — bumped
         # this down so "offline" resolves fast instead of piling up requests.
-        resp = httpx.get(cfg.METRICS_URL, timeout=0.8)
+        # trust_env=False: on Windows with a system SOCKS proxy configured (VPN
+        # software), httpx otherwise tries to route this LAN/localhost call
+        # through it and fails with "Unknown scheme for proxy URL socks4://...".
+        resp = httpx.get(cfg.METRICS_URL, timeout=0.8, trust_env=False)
         resp.raise_for_status()
         data = resp.json()
         data["reachable"] = True

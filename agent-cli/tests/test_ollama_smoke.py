@@ -10,6 +10,7 @@ import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 import pytest
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -43,7 +44,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_ollama_returns_nonempty_response():
-    client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL)
+    # trust_env=False: a system SOCKS proxy (VPN software) breaks this local
+    # LAN call on some Windows boxes otherwise.
+    client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL, http_client=httpx.Client(trust_env=False))
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": "Say 'ok' and nothing else."}],
@@ -53,10 +56,8 @@ def test_ollama_returns_nonempty_response():
 
 
 def test_ollama_tags_lists_qwen3():
-    import httpx
-
     base = OLLAMA_CHAT_URL.rsplit("/v1", 1)[0]
-    resp = httpx.get(f"{base}/api/tags", timeout=5)
+    resp = httpx.get(f"{base}/api/tags", timeout=5, trust_env=False)
     resp.raise_for_status()
     names = [m["name"] for m in resp.json().get("models", [])]
     assert any("qwen3" in n for n in names)
@@ -72,7 +73,7 @@ def test_dispatch_provider_routes_ollama_model_live():
     # Force OllamaProvider to read the freshly-loaded OLLAMA_CHAT_URL rather
     # than whatever agent_cli.config cached at its own import time.
     ollama = OllamaProvider.__new__(OllamaProvider)
-    ollama.client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL)
+    ollama.client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL, http_client=httpx.Client(trust_env=False))
 
     d = DispatchProvider(proxyapi=MagicMock(), ollama=ollama)
     text = d.chat([{"role": "user", "content": "Say 'ok' and nothing else."}], "ollama/qwen3:4b")

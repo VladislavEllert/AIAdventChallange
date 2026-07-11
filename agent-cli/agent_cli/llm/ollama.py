@@ -18,7 +18,16 @@ class OllamaProvider(OpenAICompatProvider):
         # max_retries=0: this is a LAN box, not flaky internet — the SDK's
         # default of 2 retries turned one 5s connect-timeout into a ~16s wait
         # (3 attempts) before anything surfaced to the user.
-        self.client = OpenAI(api_key="ollama", base_url=OLLAMA_CHAT_URL, timeout=_TIMEOUT, max_retries=0)
+        # trust_env=False on the http_client: on Windows with a system SOCKS
+        # proxy configured (VPN software), httpx otherwise tries to route this
+        # local/LAN call through it and fails with "Unknown scheme for proxy
+        # URL socks4://...". Ollama is always local/LAN — never needs a proxy.
+        self.client = OpenAI(
+            api_key="ollama",
+            base_url=OLLAMA_CHAT_URL,
+            max_retries=0,
+            http_client=httpx.Client(timeout=_TIMEOUT, trust_env=False),
+        )
 
     def _cost_rub(self, prompt_tokens: int, completion_tokens: int, model: str) -> float:
         return 0.0

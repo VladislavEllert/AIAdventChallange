@@ -47,11 +47,33 @@ TOOL_LABELS: dict[str, str] = {
 }
 
 
+def _mcp_http_client_factory(headers=None, timeout=None, auth=None):
+    """Same defaults as mcp's create_mcp_http_client, but trust_env=False —
+    on Windows with a system SOCKS proxy configured (VPN software), httpx
+    otherwise tries to route this VPS call through it and fails with
+    "Unknown scheme for proxy URL socks4://...", even though the VPS is
+    directly reachable without any proxy."""
+    import httpx
+    from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
+
+    kwargs: dict = {"follow_redirects": True, "trust_env": False}
+    kwargs["timeout"] = timeout if timeout is not None else httpx.Timeout(
+        MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT
+    )
+    if headers is not None:
+        kwargs["headers"] = headers
+    if auth is not None:
+        kwargs["auth"] = auth
+    return httpx.AsyncClient(**kwargs)
+
+
 async def _get_tools_from_server(server_name: str, server_url: str) -> list[dict]:
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
     headers = MCP_SERVER_HEADERS.get(server_name, {})
-    async with streamablehttp_client(server_url, headers=headers) as (r, w, _):
+    async with streamablehttp_client(
+        server_url, headers=headers, httpx_client_factory=_mcp_http_client_factory
+    ) as (r, w, _):
         async with ClientSession(r, w) as session:
             await session.initialize()
             result = await session.list_tools()
@@ -82,7 +104,9 @@ async def _call_tool_on_server(server_name: str, server_url: str, name: str, arg
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
     headers = MCP_SERVER_HEADERS.get(server_name, {})
-    async with streamablehttp_client(server_url, headers=headers) as (r, w, _):
+    async with streamablehttp_client(
+        server_url, headers=headers, httpx_client_factory=_mcp_http_client_factory
+    ) as (r, w, _):
         async with ClientSession(r, w) as session:
             await session.initialize()
             result = await session.call_tool(name, args)

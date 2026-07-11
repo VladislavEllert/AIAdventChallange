@@ -14,11 +14,17 @@ class DispatchProvider(LLMProvider):
     """
 
     def __init__(self, proxyapi: LLMProvider | None = None, ollama: LLMProvider | None = None) -> None:
-        self.proxyapi = proxyapi or ProxyAPIProvider()
-        # Lazy: constructing OllamaProvider just opens an OpenAI() client (no
-        # network call), so this isn't strictly needed — but keeps the door
-        # open for a heavier client later without an import-time cost.
+        # Both lazy: cloud models are hidden from the picker (local-only setup),
+        # so ProxyAPIProvider must not construct eagerly — it raises if
+        # PROXYAPI_KEY is unset/unusable, which would break local-only chat.
+        self._proxyapi = proxyapi
         self._ollama = ollama
+
+    @property
+    def proxyapi(self) -> LLMProvider:
+        if self._proxyapi is None:
+            self._proxyapi = ProxyAPIProvider()
+        return self._proxyapi
 
     @property
     def ollama(self) -> LLMProvider:
