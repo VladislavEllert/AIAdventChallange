@@ -219,6 +219,67 @@ METRICS_URL=http://<LAN-IP>:11435/metrics
 
 ---
 
+## ШАГ 11 (день 30). Сам `agent-web` — постоянный сервер на этом ПК
+
+**Контекст:** решение юзера (см. переписку в основной сессии) — Windows-ПК станет постоянным
+хостом всего приложения (backend + frontend), не только Ollama/ComfyUI. Mac-сессия написала и
+живьём проверила весь код (SSE-чат, картинки, настройки, мониторинг, rate-limit, параллельные
+запросы) — здесь просто разворачиваем то же самое на Windows.
+
+1. **Склонировать репо** сюда (или обновить, если уже клонирован для шагов 1-10):
+   ```powershell
+   git clone <URL-репо> C:\GitRepos\AIAdventChallange
+   cd C:\GitRepos\AIAdventChallange\agent-web
+   ```
+2. **Python-окружение** (используй тот же Python, что уже стоит для Ollama-скриптов):
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\pip install -e .
+   .venv\Scripts\pip install -e ..\agent-cli
+   ```
+3. **`.env`** в `agent-web\.env` — на самой Windows все LAN-сервисы это `localhost`:
+   ```
+   OLLAMA_CHAT_URL=http://localhost:11434/v1
+   COMFYUI_URL=http://localhost:8188
+   METRICS_URL=http://localhost:11435/metrics
+   PROXYAPI_KEY=<тот же ключ, что в agent-cli/.env на маке — если нужен облачный fallback>
+   ```
+4. **Прод-сборка фронта** (Node.js нужен на Windows — `winget install OpenJS.NodeJS.LTS` если
+   нет):
+   ```powershell
+   cd frontend
+   npm install
+   npm run build
+   cd ..
+   ```
+   Собирается в `agent_web\static\` — бэк раздаёт same-origin, никакого отдельного фронт-сервера
+   не нужно в проде.
+5. **Firewall на порт 8765:**
+   ```powershell
+   New-NetFirewallRule -DisplayName "AgentWeb 8765" -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow
+   ```
+6. **Запуск:**
+   ```powershell
+   .venv\Scripts\python __main__.py
+   ```
+   По умолчанию слушает `0.0.0.0:8765`, без auto-reload (продовые настройки — см.
+   `agent-web/__main__.py`, `AGENT_WEB_HOST`/`AGENT_WEB_PORT`/`AGENT_WEB_RELOAD` в env если нужно
+   переопределить).
+7. **Проверить с телефона** (та же WiFi, не localhost): `http://<LAN-IP>:8765/` — где LAN-IP тот
+   же, что уже записан выше для Ollama/ComfyUI.
+8. **Честная оговорка, не автозапуск:** как и ComfyUI, это НЕ Windows-сервис — процесс живёт,
+   пока открыт терминал (или `pythonw` в фоне вручную). Если после ребута нужен автозапуск —
+   `Task Scheduler` (Trigger: At log on, Action: `.venv\Scripts\python.exe __main__.py`,
+   Start in: путь к `agent-web`) — не настраивали, не просили; если сделаешь — впиши сюда.
+9. **Что уже проверено на маке живьём** (эквивалентно должно работать и здесь): реальный чат
+   через Ollama и ProxyAPI, генерация картинки через ComfyUI, панель настроек реально влияет на
+   генерацию, HUD мониторинга (офлайн/онлайн), rate-limit (30 запросов/60с на IP), 3 параллельных
+   чат-запроса — не падает, ответы не путаются между сессиями, но Ollama сериализует на одной
+   GPU (реально ~2с генерации, но ~17-21с wall time при 3 параллельных — это очередь, не
+   параллелизм, задокументировано честно в `week-06/day-30/README.md`).
+
+---
+
 ## Порты / сервисы (шпаргалка)
 
 | Сервис | Порт | Команда запуска | Проверка |

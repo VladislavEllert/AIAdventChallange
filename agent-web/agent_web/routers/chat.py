@@ -24,6 +24,7 @@ from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSW
 from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
 from agent_web.services import comfyui_client
 from agent_web.services.settings_store import load_settings
+from agent_web.services.rate_limit import rate_limit
 
 router = APIRouter(tags=["chat"])
 
@@ -70,7 +71,7 @@ def _load_profile_content(profile_name: str) -> str:
         return ""
 
 
-@router.post("/chat/stream")
+@router.post("/chat/stream", dependencies=[Depends(rate_limit)])
 async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_manager)):
     # Load fresh invariants on every request (user may have added via InvariantsPanel)
     invariants = _load_invariant_strings()
