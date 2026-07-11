@@ -18,3 +18,4 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 Secrets.xcconfig
+_corrupted_db_backup/
