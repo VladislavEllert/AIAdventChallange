@@ -7,6 +7,8 @@ type RightTab = 'memory' | 'task' | 'invariants' | 'profiles' | 'settings'
 interface AppStore {
   theme: Theme
   setTheme: (t: Theme) => void
+  userName: string
+  setUserName: (name: string) => void
   activeSessionId: string | null
   setActiveSessionId: (id: string | null) => void
   activeModel: string
@@ -34,6 +36,8 @@ export const useAppStore = create<AppStore>()(
     (set) => ({
       theme: 'dark',
       setTheme: (theme) => set({ theme }),
+      userName: '',
+      setUserName: (userName) => set({ userName }),
       activeSessionId: null,
       setActiveSessionId: (id) => set({ activeSessionId: id }),
       activeModel: 'ollama/qwen3:4b',

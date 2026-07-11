@@ -1789,6 +1789,66 @@ def test_session_store_last_session_id(tmp_path):
     assert last == s2  # второй создан позже
 
 
+def test_session_store_owner_filter(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    store.create_session(name="a", owner="alice")
+    store.create_session(name="b", owner="bob")
+
+    alice_sessions = store.list_sessions(owner="alice")
+    assert [s.name for s in alice_sessions] == ["a"]
+
+    bob_sessions = store.list_sessions(owner="bob")
+    assert [s.name for s in bob_sessions] == ["b"]
+
+    all_sessions = store.list_sessions()
+    assert len(all_sessions) == 2
+
+
+def test_session_store_legacy_ownerless_visible_to_all(tmp_path):
+    from agent_cli.core.sessions import SessionStore
+    store = SessionStore(str(tmp_path / "test.db"))
+    store.create_session(name="no-owner")  # owner defaults to ""
+    assert [s.name for s in store.list_sessions(owner="anyone")] == ["no-owner"]
+
+
+def test_session_store_migration_adds_owner_column(tmp_path):
+    """Simulates a pre-existing DB from before the `owner` column existed."""
+    import sqlite3
+    from agent_cli.core.sessions import SessionStore
+
+    db_path = str(tmp_path / "old.db")
+    con = sqlite3.connect(db_path)
+    con.executescript("""
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL, updated_at REAL NOT NULL,
+            profile_name TEXT NOT NULL DEFAULT '', model TEXT NOT NULL,
+            summary TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+            role TEXT NOT NULL, content TEXT NOT NULL, created_at REAL NOT NULL
+        );
+        CREATE TABLE session_stats (
+            session_id TEXT PRIMARY KEY, prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0, cost_rub REAL NOT NULL DEFAULT 0.0,
+            calls INTEGER NOT NULL DEFAULT 0
+        );
+    """)
+    con.execute(
+        "INSERT INTO sessions (id, name, created_at, updated_at, profile_name, model, summary) "
+        "VALUES ('old1', 'pre-migration', 0, 0, '', 'm', '')"
+    )
+    con.commit()
+    con.close()
+
+    # Opening via SessionStore must migrate in place, not crash.
+    store = SessionStore(db_path)
+    sessions = store.list_sessions(owner="anyone")
+    assert [s.name for s in sessions] == ["pre-migration"]
+
+
 def test_session_store_save_and_load(tmp_path):
     from agent_cli.core.sessions import SessionStore
     from agent_cli.core.memory import Memory

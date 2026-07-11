@@ -29,12 +29,13 @@ export default function ChatList() {
   const setActiveSessionId = useAppStore((s) => s.setActiveSessionId)
   const activeAgentId = useAppStore((s) => s.activeAgentId)
   const setActiveAgent = useAppStore((s) => s.setActiveAgent)
+  const userName = useAppStore((s) => s.userName)
   const { setMessages, reset } = useChatStore()
 
   const loadSessions = async (agentId?: string | null) => {
     try {
       const id = agentId !== undefined ? agentId : activeAgentId
-      setSessions(await listSessions(id ?? '__default__'))
+      setSessions(await listSessions(id ?? '__default__', userName))
     } catch (e) { console.error(e) }
   }
 
@@ -44,7 +45,8 @@ export default function ChatList() {
 
   useEffect(() => {
     loadSessions(activeAgentId ?? '__default__')
-  }, [activeAgentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAgentId, userName])
 
   useEffect(() => { loadAgents() }, [])
 
@@ -64,7 +66,7 @@ export default function ChatList() {
   const newSession = async () => {
     try {
       const agentId = activeAgentId ?? '__default__'
-      const s = await createSession('', agentId)
+      const s = await createSession('', agentId, userName)
       await loadSessions(agentId)
       reset()
       setActiveSessionId(s.session_id)

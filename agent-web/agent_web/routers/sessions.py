@@ -25,15 +25,19 @@ def _meta_to_out(m) -> SessionOut:
         model=m.model,
         msg_count=m.msg_count,
         cost_rub=round(m.cost_rub, 6),
+        owner=m.owner,
     )
 
 
 @router.get("", response_model=list[SessionOut])
 def list_sessions(
     agent_id: str | None = Query(default=None),
+    owner: str | None = Query(default=None),
     store: SessionStore = Depends(get_session_store),
 ):
-    all_meta = store.list_sessions()
+    # owner filters to that nickname's sessions + legacy ownerless ones (light
+    # isolation, no auth — see SessionStore.list_sessions docstring).
+    all_meta = store.list_sessions(owner=owner)
     if agent_id is not None:
         all_ids = [m.session_id for m in all_meta]
         allowed = set(agent_sessions.get_sessions_for_agent(agent_id, all_ids))
@@ -43,7 +47,7 @@ def list_sessions(
 
 @router.post("", response_model=SessionOut)
 def create_session(body: SessionCreate, store: SessionStore = Depends(get_session_store)):
-    sid = store.create_session(name=body.name)
+    sid = store.create_session(name=body.name, owner=body.owner)
     # Link to agent (default if not specified)
     agent_sessions.link(sid, body.agent_id or "__default__")
     meta = store.get_meta(sid)

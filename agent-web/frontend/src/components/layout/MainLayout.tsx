@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import Sidebar from './Sidebar'
 import StatusBar from './StatusBar'
+import NicknameModal from './NicknameModal'
 import ChatArea from '../chat/ChatArea'
 import ChatInput from '../chat/ChatInput'
 import RightPanel from '../panels/RightPanel'
@@ -51,6 +52,7 @@ export default function MainLayout() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-gradient)' }}>
+      <NicknameModal />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
         {/* Sidebar */}

@@ -11,6 +11,8 @@ node_modules/
 
 # SQLite sessions (локальные данные)
 agent-cli/data/sessions.db
+agent-cli/data/sessions.db-shm
+agent-cli/data/sessions.db-wal
 
 # Xcode / iOS
 build/

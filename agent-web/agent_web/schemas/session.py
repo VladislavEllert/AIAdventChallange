@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class SessionCreate(BaseModel):
     name: str = ""
     agent_id: str | None = None
+    owner: str = ""
 
 
 class SessionRename(BaseModel):
@@ -20,6 +21,7 @@ class SessionOut(BaseModel):
     model: str
     msg_count: int = 0
     cost_rub: float = 0.0
+    owner: str = ""
 
 
 class MessageOut(BaseModel):

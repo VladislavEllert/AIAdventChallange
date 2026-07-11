@@ -66,6 +66,7 @@ export default function ChatInput() {
 
   const activeSessionId = useAppStore((s) => s.activeSessionId)
   const activeAgentId = useAppStore((s) => s.activeAgentId)
+  const userName = useAppStore((s) => s.userName)
   const activeAgentPersona = useAppStore((s) => s.activeAgentPersona)
   const activeModel = useAppStore((s) => s.activeModel)
   const setActiveModel = useAppStore((s) => s.setActiveModel)
@@ -195,7 +196,7 @@ export default function ChatInput() {
     if (base === '/new') {
       const name = parts.slice(1).join(' ')
       try {
-        const s = await createSession(name, activeAgentId ?? '__default__')
+        const s = await createSession(name, activeAgentId ?? '__default__', userName)
         setActiveSessionId(s.session_id)
         reset()
         addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `✅ Новая сессия создана: \`${s.display_name}\`` })
@@ -312,7 +313,7 @@ export default function ChatInput() {
     }
 
     return false
-  }, [reset, addMessage, setActiveModel, setActiveSessionId, toggleRightPanel, rightPanelOpen, setRightPanelTab, activeAgentId, activeSessionId])
+  }, [reset, addMessage, setActiveModel, setActiveSessionId, toggleRightPanel, rightPanelOpen, setRightPanelTab, activeAgentId, activeSessionId, userName])
 
   const send = useCallback(async () => {
     const msg = text.trim()

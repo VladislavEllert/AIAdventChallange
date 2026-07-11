@@ -10,6 +10,7 @@ export interface SessionOut {
   model: string
   msg_count: number
   cost_rub: number
+  owner: string
 }
 
 export interface MessageOut {
@@ -22,11 +23,16 @@ export interface SessionDetail extends SessionOut {
   messages: MessageOut[]
 }
 
-export const listSessions = (agentId?: string) =>
-  get<SessionOut[]>(agentId ? `/sessions?agent_id=${encodeURIComponent(agentId)}` : '/sessions')
+export const listSessions = (agentId?: string, owner?: string) => {
+  const params = new URLSearchParams()
+  if (agentId) params.set('agent_id', agentId)
+  if (owner) params.set('owner', owner)
+  const qs = params.toString()
+  return get<SessionOut[]>(qs ? `/sessions?${qs}` : '/sessions')
+}
 
-export const createSession = (name = '', agentId?: string) =>
-  post<SessionOut>('/sessions', { name, agent_id: agentId })
+export const createSession = (name = '', agentId?: string, owner = '') =>
+  post<SessionOut>('/sessions', { name, agent_id: agentId, owner })
 
 export const getSession = (id: string) => get<SessionDetail>(`/sessions/${id}`)
 export const renameSession = (id: string, name: string) => put(`/sessions/${id}`, { name })

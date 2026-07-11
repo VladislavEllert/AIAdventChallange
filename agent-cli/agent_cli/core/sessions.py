@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at   REAL NOT NULL,
     profile_name TEXT NOT NULL DEFAULT '',
     model        TEXT NOT NULL,
-    summary      TEXT NOT NULL DEFAULT ''
+    summary      TEXT NOT NULL DEFAULT '',
+    owner        TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -64,6 +65,7 @@ class SessionMeta:
     model: str
     msg_count: int = 0
     cost_rub: float = 0.0
+    owner: str = ""
 
     @property
     def display_name(self) -> str:
@@ -87,6 +89,11 @@ class SessionStore:
     def _init_db(self) -> None:
         with self._connect() as con:
             con.executescript(_DDL)
+            # Migration for pre-existing DBs created before the `owner` column
+            # (light per-nickname session isolation) was added.
+            cols = {row["name"] for row in con.execute("PRAGMA table_info(sessions)")}
+            if "owner" not in cols:
+                con.execute("ALTER TABLE sessions ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
 
     # ── создание / получение ─────────────────────────────────────────────────
 
@@ -95,15 +102,16 @@ class SessionStore:
         name: str = "",
         model: str = DEFAULT_MODEL,
         profile_name: str = "",
+        owner: str = "",
     ) -> str:
         """Создаёт новую сессию, возвращает session_id."""
         session_id = uuid.uuid4().hex[:8]
         now = time.time()
         with self._connect() as con:
             con.execute(
-                "INSERT INTO sessions (id, name, created_at, updated_at, profile_name, model, summary) "
-                "VALUES (?, ?, ?, ?, ?, ?, '')",
-                (session_id, name, now, now, profile_name, model),
+                "INSERT INTO sessions (id, name, created_at, updated_at, profile_name, model, summary, owner) "
+                "VALUES (?, ?, ?, ?, ?, ?, '', ?)",
+                (session_id, name, now, now, profile_name, model, owner),
             )
             con.execute(
                 "INSERT INTO session_stats (session_id) VALUES (?)",
@@ -141,19 +149,30 @@ class SessionStore:
             model=row["model"],
             msg_count=row["msg_count"],
             cost_rub=row["cost_rub"],
+            owner=row["owner"],
         )
 
-    def list_sessions(self) -> list[SessionMeta]:
-        """Все сессии, отсортированные по updated_at DESC."""
+    def list_sessions(self, owner: str | None = None) -> list[SessionMeta]:
+        """
+        Сессии, отсортированные по updated_at DESC.
+        owner=None -> все сессии (сохранена старая behaviour для внутренних вызовов).
+        owner="<nickname>" -> только сессии этого owner + "ничьи" (owner='') —
+        старые сессии до миграции остаются видны всем, не пропадают молча.
+        """
+        query = (
+            "SELECT s.*, "
+            "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msg_count, "
+            "  COALESCE(st.cost_rub, 0.0) AS cost_rub "
+            "FROM sessions s "
+            "LEFT JOIN session_stats st ON st.session_id = s.id "
+        )
+        params: tuple = ()
+        if owner is not None:
+            query += "WHERE s.owner = ? OR s.owner = '' "
+            params = (owner,)
+        query += "ORDER BY s.updated_at DESC"
         with self._connect() as con:
-            rows = con.execute(
-                "SELECT s.*, "
-                "  (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msg_count, "
-                "  COALESCE(st.cost_rub, 0.0) AS cost_rub "
-                "FROM sessions s "
-                "LEFT JOIN session_stats st ON st.session_id = s.id "
-                "ORDER BY s.updated_at DESC",
-            ).fetchall()
+            rows = con.execute(query, params).fetchall()
         return [
             SessionMeta(
                 session_id=r["id"],
@@ -164,6 +183,7 @@ class SessionStore:
                 model=r["model"],
                 msg_count=r["msg_count"],
                 cost_rub=r["cost_rub"],
+                owner=r["owner"],
             )
             for r in rows
         ]

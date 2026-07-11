@@ -30,6 +30,9 @@ export default function SettingsPanel() {
   const activeModel = useAppStore((s) => s.activeModel)
   const isImageModel = (activeModel ?? '').startsWith('comfyui/')
   const isOllamaModel = (activeModel ?? '').startsWith('ollama/')
+  const userName = useAppStore((s) => s.userName)
+  const setUserName = useAppStore((s) => s.setUserName)
+  const [nameDraft, setNameDraft] = useState(userName)
 
   const [settings, setSettings] = useState<Settings | null>(null)
   const [savedFlash, setSavedFlash] = useState(false)
@@ -57,6 +60,32 @@ export default function SettingsPanel() {
 
   return (
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>ИМЯ</div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, lineHeight: 1.5 }}>
+        Отделяет твои чаты от чужих на этом сервере — без пароля, просто метка.
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && nameDraft.trim()) setUserName(nameDraft.trim()) }}
+          style={{
+            flex: 1, padding: '6px 10px', borderRadius: 8,
+            border: '1px solid var(--border)', background: 'var(--bg-input)',
+            color: 'var(--text-primary)', fontSize: 12, outline: 'none',
+          }}
+        />
+        <button
+          onClick={() => nameDraft.trim() && setUserName(nameDraft.trim())}
+          disabled={!nameDraft.trim() || nameDraft.trim() === userName}
+          style={{
+            padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'transparent', color: 'var(--text-secondary)', fontSize: 11,
+            cursor: nameDraft.trim() && nameDraft.trim() !== userName ? 'pointer' : 'not-allowed',
+          }}
+        >Сохранить</button>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>ГЕНЕРАЦИЯ ТЕКСТА</div>
         {savedFlash && <span style={{ fontSize: 10, color: 'var(--accent)' }}>✓ сохранено</span>}
