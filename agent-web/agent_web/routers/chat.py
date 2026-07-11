@@ -291,24 +291,32 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
 
                 # Day 23: query rewrite — short LLM call to expand/clarify query
                 rewritten_query = msg
-                try:
-                    rw_client, rw_model = agent.provider.client_for(agent.model)
-                    rw_resp = rw_client.chat.completions.create(
-                        model=rw_model,
-                        messages=[
-                            {"role": "system", "content": (
-                                "Translate the user's question to English if needed, then rewrite it "
-                                "for semantic search over an English corpus. "
-                                "Expand abbreviations, add synonyms, make it more specific. "
-                                "Return ONLY the rewritten English query, nothing else."
-                            )},
-                            {"role": "user", "content": msg},
-                        ],
-                        max_tokens=80,
-                    )
-                    rewritten_query = rw_resp.choices[0].message.content.strip()
-                except Exception:
-                    rewritten_query = msg  # fallback to original
+                # Qwen3 (ollama/*) is a "thinking" model: its <think> reasoning eats the
+                # whole max_tokens budget on this short rewrite task and never reaches an
+                # answer (confirmed live up to max_tokens=1500, still mid-thought) — no
+                # known API flag reliably disables it on this Ollama build. Skip the
+                # rewrite for local models rather than burn 15-20s for an empty result.
+                if not agent.model.startswith("ollama/"):
+                    try:
+                        rw_client, rw_model = agent.provider.client_for(agent.model)
+                        rw_resp = rw_client.chat.completions.create(
+                            model=rw_model,
+                            messages=[
+                                {"role": "system", "content": (
+                                    "Translate the user's question to English if needed, then rewrite it "
+                                    "for semantic search over an English corpus. "
+                                    "Expand abbreviations, add synonyms, make it more specific. "
+                                    "Return ONLY the rewritten English query, nothing else."
+                                )},
+                                {"role": "user", "content": msg},
+                            ],
+                            max_tokens=80,
+                        )
+                        candidate = (rw_resp.choices[0].message.content or "").strip()
+                        if candidate:
+                            rewritten_query = candidate
+                    except Exception:
+                        pass  # fallback to original msg already set above
 
                 # Day 25: extract/update task state from conversation history
                 task_state = extract_task_state(

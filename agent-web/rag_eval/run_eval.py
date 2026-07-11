@@ -26,11 +26,12 @@ from agent_web.services.rag.index import load_index
 from agent_web.services.rag.retriever import search as rag_search
 from agent_web.services.rag.config import INDEX_FIXED, TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSWER
 from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
-from agent_cli.llm.proxyapi import ProxyAPIProvider
+from agent_cli.llm.dispatch import DispatchProvider
 
 QUESTIONS_FILE = Path(__file__).parent / "questions.json"
 EVAL_DIR = Path(__file__).parent
 
+# Overridden by --model (day 28: ollama/qwen3:4b for a fully-local run).
 MODEL = "openai/gpt-4o-mini"
 
 RAG_SYSTEM = (
@@ -49,34 +50,53 @@ REWRITE_SYSTEM = (
 )
 
 
-def rewrite_query(provider: ProxyAPIProvider, question: str) -> str:
+def rewrite_query(provider: DispatchProvider, question: str) -> str:
+    # Qwen3 (ollama/*) is a "thinking" model: its <think> reasoning eats the whole
+    # max_tokens budget on this short rewrite task and never reaches an answer
+    # (confirmed live up to max_tokens=1500, still mid-thought, no known API flag
+    # reliably disables it on this Ollama build). Skip the rewrite for local models —
+    # search on the raw question instead of burning 15-20s for an empty result.
+    if MODEL.startswith("ollama/"):
+        return question
     try:
-        resp = provider.client.chat.completions.create(
-            model=MODEL,
+        client, bare_model = provider.client_for(MODEL)
+        resp = client.chat.completions.create(
+            model=bare_model,
             messages=[
                 {"role": "system", "content": REWRITE_SYSTEM},
                 {"role": "user", "content": question},
             ],
             max_tokens=80,
         )
-        return resp.choices[0].message.content.strip()
+        candidate = (resp.choices[0].message.content or "").strip()
+        return candidate or question
     except Exception:
         return question
 
 
-def ask_plain(provider: ProxyAPIProvider, question: str) -> str:
+def _max_tokens_kwargs(cap: int) -> dict:
+    # Qwen3 (ollama/*) is a "thinking" model — its <think> reasoning can run past
+    # any capped budget (confirmed live up to 1500 tokens, still mid-thought) and
+    # leaves content empty if cut off mid-reasoning. The live app's streaming path
+    # already omits max_tokens for exactly this reason (works fine there). Do the
+    # same here for non-streaming calls; keep the cap for cloud models (cost).
+    return {} if MODEL.startswith("ollama/") else {"max_tokens": cap}
+
+
+def ask_plain(provider: DispatchProvider, question: str) -> str:
     messages = [
         {"role": "system", "content": PLAIN_SYSTEM},
         {"role": "user", "content": question},
     ]
-    resp = provider.client.chat.completions.create(
-        model=MODEL, messages=messages, max_tokens=400
+    client, bare_model = provider.client_for(MODEL)
+    resp = client.chat.completions.create(
+        model=bare_model, messages=messages, **_max_tokens_kwargs(400)
     )
-    return resp.choices[0].message.content.strip()
+    return (resp.choices[0].message.content or "").strip()
 
 
 def ask_rag(
-    provider: ProxyAPIProvider,
+    provider: DispatchProvider,
     question: str,
     index,
     top_k: int,
@@ -100,10 +120,11 @@ def ask_rag(
         {"role": "system", "content": RAG_SYSTEM},
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
     ]
-    resp = provider.client.chat.completions.create(
-        model=MODEL, messages=messages, max_tokens=500
+    client, bare_model = provider.client_for(MODEL)
+    resp = client.chat.completions.create(
+        model=bare_model, messages=messages, **_max_tokens_kwargs(500)
     )
-    answer = resp.choices[0].message.content.strip()
+    answer = (resp.choices[0].message.content or "").strip()
     sources_used = [chunk.source for chunk, _ in hits]
     return answer, meta, search_query
 
@@ -166,7 +187,7 @@ def run_scenario(provider, index, scenario: dict) -> list[dict]:
         meta["rewritten_query"] = rewritten
 
         # Extract task state (pass current history before this turn)
-        task_state = extract_task_state(provider, history[-12:], task_state)
+        task_state = extract_task_state(provider, history[-12:], task_state, model=MODEL)
 
         # Build context
         context_parts = []
@@ -183,10 +204,11 @@ def run_scenario(provider, index, scenario: dict) -> list[dict]:
         messages.extend(history[-8:])  # keep last 4 pairs
         messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"})
 
-        resp = provider.client.chat.completions.create(
-            model=MODEL, messages=messages, max_tokens=500
+        client, bare_model = provider.client_for(MODEL)
+        resp = client.chat.completions.create(
+            model=bare_model, messages=messages, **_max_tokens_kwargs(500)
         )
-        answer = resp.choices[0].message.content.strip()
+        answer = (resp.choices[0].message.content or "").strip()
 
         # Update history
         history.append({"role": "user", "content": question})
@@ -329,12 +351,16 @@ def run_day25(provider, index, out_path):
 
 
 def main():
+    global MODEL
     parser = argparse.ArgumentParser()
     parser.add_argument("--day", type=int, default=22)
+    parser.add_argument("--model", type=str, default=MODEL,
+                         help="e.g. openai/gpt-4o-mini (cloud, default) or ollama/qwen3:4b (local)")
     args = parser.parse_args()
+    MODEL = args.model
 
     index = load_index(INDEX_FIXED)
-    provider = ProxyAPIProvider()
+    provider = DispatchProvider()
 
     if args.day == 25:
         out_path = EVAL_DIR / "results_day25.md"
