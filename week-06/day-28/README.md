@@ -1,5 +1,9 @@
 # Day 28 — Local LLM + RAG
 
+## Видео
+
+[Видео дня](https://drive.google.com/drive/folders/1clLB0Q5h68tDx2e6xf_AcQwMHgRS9KW4?usp=share_link) (папка со всеми видео недели 6)
+
 ## ⭐ Main Code
 
 | File | What it does |
