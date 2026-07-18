@@ -1,0 +1,14 @@
+diff --git a/agent-web/agent_web/services/comfyui_client.py b/agent-web/agent_web/services/comfyui_client.py
+index 3333333..4444444 100644
+--- a/agent-web/agent_web/services/comfyui_client.py
++++ b/agent-web/agent_web/services/comfyui_client.py
+@@ -12,7 +12,7 @@ import httpx
+ from agent_cli.config import COMFYUI_URL
+
+
+-def _client() -> httpx.Client:
++def _client(timeout: float = 30.0) -> httpx.Client:
+     # COMFYUI_URL is always localhost or LAN (192.168.x.x) — no proxy should
+     # ever be involved.
+-    return httpx.Client(base_url=COMFYUI_URL, trust_env=False)
++    return httpx.Client(base_url=COMFYUI_URL, timeout=timeout)

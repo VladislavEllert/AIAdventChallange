@@ -1,0 +1,182 @@
+[
+  {
+    "id": "TICKET-001",
+    "title": "Ollama/ComfyUI/MCP-запросы зависают или падают с ошибкой прокси",
+    "product_area": "local-llm",
+    "version": "week-06 day-30 (Windows deploy)",
+    "environment": "Windows 11, RTX 4060 8GB, Python 3.x venv, системный SOCKS-прокси включён в настройках ОС",
+    "symptom": "Любой локальный/LAN-вызов (Ollama chat, ComfyUI, /api/metrics, MCP finance) либо висит десятками секунд, либо падает с ошибкой соединения через прокси, хотя сервер поднят и слушает порт.",
+    "steps": [
+      "Поднять agent-web на Windows-машине с системным SOCKS-прокси в настройках сети",
+      "Отправить сообщение модели ollama/qwen3:4b (LAN 192.168.0.33:11434)",
+      "Запрос уходит через системный прокси вместо прямого подключения к LAN-адресу"
+    ],
+    "status": "resolved",
+    "user": "vladislav (Windows-сессия)",
+    "history": [
+      {"author": "vladislav", "text": "Чат виснет на локальной модели, на Mac всё ок было."},
+      {"author": "agent", "text": "Воспроизвёл: httpx/OpenAI SDK по умолчанию доверяют системным env-переменным прокси (trust_env=True). На Windows это ловит SOCKS-прокси даже для localhost/LAN-адресов."},
+      {"author": "agent", "text": "Фикс: везде, где создаётся HTTP-клиент для local/LAN/VPS (Ollama, ComfyUI, metrics-прокси, MCP), явно передавать trust_env=False."}
+    ]
+  },
+  {
+    "id": "TICKET-002",
+    "title": "sessions.db повреждена после принудительного завершения процесса",
+    "product_area": "storage",
+    "version": "week-06 day-30 (Windows deploy)",
+    "environment": "Windows 11, uvicorn запущен из PowerShell, SQLite sessions.db с WAL-режимом",
+    "symptom": "После `taskkill /F` по uvicorn-процессу во время открытой WAL-транзакции файл sessions.db повреждён — приложение падает при следующем старте с ошибкой чтения БД.",
+    "steps": [
+      "Запустить agent-web, открыть сессию (пишется в sessions.db через WAL)",
+      "Выполнить `taskkill /F /PID <uvicorn_pid>` пока идёт запись",
+      "Перезапустить agent-web — SQLite сообщает database disk image is malformed"
+    ],
+    "status": "resolved",
+    "user": "vladislav (Windows-сессия)",
+    "history": [
+      {"author": "vladislav", "text": "После жёсткого килла процесса приложение не стартует, ругается на базу."},
+      {"author": "agent", "text": "WAL-транзакция была открыта в момент таskkill /F — файл журнала не досброшен, база в неконсистентном состоянии. Важных данных в ней не было (тестовая сессия), пересоздал файл."},
+      {"author": "agent", "text": "На будущее: останавливать uvicorn через Ctrl+C (SIGINT) или `taskkill` без /F, чтобы SQLite успел закрыть WAL корректно."}
+    ]
+  },
+  {
+    "id": "TICKET-003",
+    "title": "qwen3:4b возвращает пустой ответ на RAG-запрос",
+    "product_area": "local-llm",
+    "version": "week-06 day-28",
+    "environment": "Ollama qwen3:4b (thinking-модель), LAN-бокс 192.168.0.33:11434, max_tokens=1500",
+    "symptom": "На вопросы с RAG-контекстом модель возвращает пустую строку вместо ответа; в обычном чате без RAG отвечает нормально.",
+    "steps": [
+      "Задать вопрос через RAG (kb=handbook или kb=project) на модели ollama/qwen3:4b",
+      "max_tokens стоит в 1500 (дефолт настроек)",
+      "Ответ приходит пустым"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "RAG-ответ на qwen3 пустой, без RAG всё работает."},
+      {"author": "agent", "text": "qwen3 — thinking-модель, генерирует скрытый блок <think>...</think> перед финальным ответом. С длинным RAG-контекстом в промпте этот блок съедает весь лимит max_tokens=1500, до видимого ответа очередь не доходит."},
+      {"author": "agent", "text": "`think:false` и `/no_think` не сработали на этой сборке Ollama. Рабочий обход: для ollama/* моделей отключить query-rewrite (день 28) — короче промпт, меньше шанс упереться в лимит; alternative — поднять max_tokens для ollama-моделей отдельно."}
+    ]
+  },
+  {
+    "id": "TICKET-004",
+    "title": "Мобильная вёрстка чата полностью сломана",
+    "product_area": "frontend",
+    "version": "week-06 day-29",
+    "environment": "iOS Safari + Android Chrome, узкий viewport (< 480px), agent-web frontend (React)",
+    "symptom": "На мобильном экране панели (Settings/Memory/Task) перекрывают чат, тап-зоны меньше 44px, при фокусе на input Safari зумит страницу — интерфейс практически не юзабелен.",
+    "steps": [
+      "Открыть agent-web на телефоне (или DevTools responsive mode < 480px)",
+      "Открыть любую боковую панель (Settings/Memory)",
+      "Панель рендерится поверх чата без возможности скрыть, инпут при фокусе триггерит iOS zoom"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "Зашёл с телефона проверить — всё наехало друг на друга, не потыкать."},
+      {"author": "agent", "text": "Playwright-скриншоты на реальных мобильных viewport подтвердили: панели fixed-position без адаптива, тап-таргеты < 44px, input font-size < 16px триггерит iOS auto-zoom."},
+      {"author": "agent", "text": "Исправлено: панели переведены на выезжающие drawer’ы с overlay, тап-зоны подняты до 44px, font-size инпута зафиксирован от 16px (убирает iOS zoom)."}
+    ]
+  },
+  {
+    "id": "TICKET-005",
+    "title": "/api/metrics виснет на 3 секунды на каждый запрос",
+    "product_area": "backend",
+    "version": "week-06 day-29",
+    "environment": "Mac-сессия проксирует /api/metrics на Windows metrics_server.py (LAN), httpx-клиент с дефолтным таймаутом",
+    "symptom": "Каждый запрос статус-бара к /api/metrics занимает около 3 секунд даже когда Windows-бокс недоступен (выключен/не в сети) — HUD в статус-баре подтормаживает UI.",
+    "steps": [
+      "Выключить или сделать недоступным Windows metrics_server.py (LAN 192.168.0.33:11435)",
+      "Обновить статус-бар в agent-web (дергает /api/metrics)",
+      "Ответ занимает ~3с вместо мгновенного отказа"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "HUD с метриками подвисает, статус-бар дёргается каждые несколько секунд."},
+      {"author": "agent", "text": "Таймаут httpx-клиента прокси стоял в 3.0с — при недоступном remote-хосте это не instant refused (LAN, не localhost), а полный таймаут на каждый запрос."},
+      {"author": "agent", "text": "Снизил таймаут прокси-клиента с 3.0с до 0.8с — HUD деградирует в 'offline' быстро, не блокируя основной UI."}
+    ]
+  },
+  {
+    "id": "TICKET-006",
+    "title": "Ollama-чат тихо уходит на localhost вместо LAN-бокса",
+    "product_area": "config",
+    "version": "week-06 day-26",
+    "environment": "Mac-сессия, root .env и agent-web/.env оба присутствуют в репозитории",
+    "symptom": "OLLAMA_CHAT_URL резолвится не в тот .env файл — переменная из agent-web/.env игнорируется, используется дефолт (localhost), запросы к LAN-серверу Ollama не уходят, но ошибки нет — просто localhost:11434 недоступен.",
+    "steps": [
+      "Иметь одновременно root .env и agent-web/.env с разными значениями OLLAMA_CHAT_URL",
+      "Запустить agent-web из корня репозитория",
+      "python-dotenv резолвит не тот файл (frame-based поиск вверх по стеку вызовов)"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "LAN Ollama недоступен, хотя URL в .env вроде правильный."},
+      {"author": "agent", "text": "python-dotenv по умолчанию ищет .env по фрейму вызывающего кода вверх по стеку — из корня репо это резолвило root .env, а не agent-web/.env, где реально лежит LAN-адрес."},
+      {"author": "agent", "text": "Исправлено: путь к .env передаётся явно (`load_dotenv(explicit_path)`), а не через автопоиск по стеку."}
+    ]
+  },
+  {
+    "id": "TICKET-007",
+    "title": "Стриминг ломается под DispatchProvider на облачных моделях",
+    "product_area": "backend",
+    "version": "week-06 day-27",
+    "environment": "agent-web, DispatchProvider оборачивает ProxyAPIProvider/OllamaProvider/ComfyUIClient по префиксу модели",
+    "symptom": "chat_stream_with_stats падает или отдаёт пустой поток, когда провайдер обёрнут в DispatchProvider — прямой ProxyAPIProvider без обёртки работает нормально.",
+    "steps": [
+      "Включить DispatchProvider (маршрутизация ollama/*, comfyui/*, остальное → ProxyAPI)",
+      "Отправить сообщение на облачную модель (openai/gpt-4o-mini)",
+      "respond_stream_with_stats делает isinstance(provider, ProxyAPIProvider) — DispatchProvider этому условию не соответствует"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "После добавления диспетчера для Ollama/ComfyUI обычный облачный чат перестал стримить."},
+      {"author": "agent", "text": "`isinstance(provider, ProxyAPIProvider)` в respond_stream_with_stats — узкая проверка типа, а DispatchProvider не является ProxyAPIProvider даже когда внутри маршрутизирует именно туда."},
+      {"author": "agent", "text": "Исправлено: проверка переведена на duck-typing/атрибут провайдера вместо isinstance на конкретный класс — DispatchProvider теперь корректно стримит вне зависимости от того, на кого маршрутизирует."}
+    ]
+  },
+  {
+    "id": "TICKET-008",
+    "title": "DispatchProvider требует PROXYAPI_KEY даже для чисто локальных моделей",
+    "product_area": "backend",
+    "version": "week-06 day-30 (Windows deploy)",
+    "environment": "Windows-бокс без ProxyAPI-ключа в .env, используются только ollama/* и comfyui/* модели",
+    "symptom": "Приложение падает на старте или при первом запросе с ошибкой отсутствующего PROXYAPI_KEY, хотя пользователь ни разу не выбрал облачную модель.",
+    "steps": [
+      "Запустить agent-web на машине без PROXYAPI_KEY в .env",
+      "DispatchProvider создаёт ProxyAPIProvider эагерно в конструкторе (нужен ключ сразу)",
+      "Отправить сообщение на ollama/qwen3:4b — падает раньше, чем доходит до Ollama-ветки"
+    ],
+    "status": "resolved",
+    "user": "vladislav (Windows-сессия)",
+    "history": [
+      {"author": "vladislav", "text": "На Windows-боксе без ProxyAPI ключа падает сразу, даже если хочу только локальную модель."},
+      {"author": "agent", "text": "DispatchProvider конструировал ProxyAPIProvider сразу при инициализации, независимо от того, какая модель реально будет использована — требование ключа было эагерным, а не по требованию."},
+      {"author": "agent", "text": "Исправлено: ленивая конструкция — ProxyAPIProvider создаётся только при первом реальном обращении к облачной модели, локальные модели работают вообще без PROXYAPI_KEY в .env."}
+    ]
+  },
+  {
+    "id": "TICKET-009",
+    "title": "Прогон тестов затирает боевой settings.json",
+    "product_area": "backend",
+    "version": "week-06 day-29",
+    "environment": "agent-web/tests, settings_store.py читает/пишет data/settings.json напрямую",
+    "symptom": "После `pytest agent-web/tests` реальный data/settings.json (закоммиченный, с боевыми дефолтами) перезаписан значениями из тестового прогона — default_model и другие поля затёрты.",
+    "steps": [
+      "Запустить pytest agent-web/tests без специальной изоляции файлового пути настроек",
+      "Тест на settings API пишет через реальный settings_store.save_settings()",
+      "Путь к файлу не подменён — тест пишет в тот же data/settings.json, что использует прод"
+    ],
+    "status": "resolved",
+    "user": "vladislav",
+    "history": [
+      {"author": "vladislav", "text": "После прогона тестов дефолтная модель в настройках слетела на что-то из теста."},
+      {"author": "agent", "text": "Тест settings API не изолировал путь к файлу настроек — писал прямо в data/settings.json, общий с рабочим приложением."},
+      {"author": "agent", "text": "Исправлено: фикстура monkeypatch подменяет путь settings_store на tmp_path на время теста, реальный файл больше не трогается прогоном."}
+    ]
+  }
+]

@@ -1,0 +1,63 @@
+name: AI Review
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    # Forks don't get repo secrets — running this on a fork PR would just
+    # fail on a missing PROXYAPI_KEY. Skip it outright instead of a red run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PROXYAPI_KEY: ${{ secrets.PROXYAPI_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # This repo's LAN-only Ollama box isn't reachable from a GitHub-hosted
+      # runner — the project RAG index must be queried with the ProxyAPI
+      # embed backend (day 31's index_project_proxy.json), not Ollama.
+      RAG_EMBED_BACKEND: proxyapi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agent-cli + agent-web
+        run: pip install -e ./agent-cli -e ./agent-web
+
+      - name: Determine base ref
+        id: base
+        run: echo "sha=origin/${{ github.event.pull_request.base.ref || 'main' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build diff
+        run: git diff ${{ steps.base.outputs.sha }}...HEAD > pr.diff
+
+      - name: Run AI review
+        if: env.PROXYAPI_KEY != ''
+        run: |
+          python -m agent_web.services.review \
+            --diff-file pr.diff \
+            --pr "${{ github.event.pull_request.number }}" \
+            --post-comment
+
+      - name: No PROXYAPI_KEY — post degradation notice
+        if: env.PROXYAPI_KEY == '' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: "AI Review skipped: PROXYAPI_KEY secret is not configured for this repo (Settings → Secrets and variables → Actions)."
+            })

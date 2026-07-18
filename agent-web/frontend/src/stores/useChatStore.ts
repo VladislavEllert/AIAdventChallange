@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatUsage } from '../api/chat'
+import type { ChatUsage, ChatConfirmRequest } from '../api/chat'
 
 export interface Source {
   source: string
@@ -44,6 +44,7 @@ interface ChatStore {
   sessionTokens: number
   violation: { invariant: string; desc: string } | null
   toolStatus: string | null
+  pendingConfirm: ChatConfirmRequest | null
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
   appendChunk: (id: string, text: string) => void
@@ -58,6 +59,7 @@ interface ChatStore {
   setViolation: (v: { invariant: string; desc: string } | null) => void
   clearViolation: () => void
   setToolStatus: (v: string | null) => void
+  setPendingConfirm: (v: ChatConfirmRequest | null) => void
   reset: () => void
 }
 
@@ -68,6 +70,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   sessionTokens: 0,
   violation: null,
   toolStatus: null,
+  pendingConfirm: null,
 
   setMessages: (msgs) => set({ messages: msgs }),
 
@@ -133,8 +136,9 @@ export const useChatStore = create<ChatStore>((set) => ({
   setViolation: (v) => set({ violation: v }),
   clearViolation: () => set({ violation: null }),
   setToolStatus: (v) => set({ toolStatus: v }),
+  setPendingConfirm: (v) => set({ pendingConfirm: v }),
 
   reset: () =>
-    set({ messages: [], isStreaming: false, sessionCost: 0, sessionTokens: 0, violation: null, toolStatus: null }),
+    set({ messages: [], isStreaming: false, sessionCost: 0, sessionTokens: 0, violation: null, toolStatus: null, pendingConfirm: null }),
 
 }))

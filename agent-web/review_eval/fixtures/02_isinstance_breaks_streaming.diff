@@ -1,0 +1,27 @@
+diff --git a/agent-web/agent_web/services/agent_manager.py b/agent-web/agent_web/services/agent_manager.py
+index 1111111..2222222 100644
+--- a/agent-web/agent_web/services/agent_manager.py
++++ b/agent-web/agent_web/services/agent_manager.py
+@@ -40,6 +40,7 @@
+ import time
++from agent_cli.llm.proxyapi import ProxyAPIProvider
+ from agent_cli.llm.provider import TokenUsage
+
+
+@@ -88,10 +89,17 @@ class Agent:
+     def respond_stream_with_stats(self, user_message: str, **kwargs):
+         messages = self._build_messages(user_message)
+-        chunk_iter, ref = self.provider.chat_stream_with_stats(
+-            messages, self.model, **kwargs
+-        )
++        # Only ProxyAPI actually returns real token usage via
++        # stream_options include_usage, so special-case it here.
++        if isinstance(self.provider, ProxyAPIProvider):
++            chunk_iter, ref = self.provider.chat_stream_with_stats(
++                messages, self.model, **kwargs
++            )
++        else:
++            # falls back to a plain, non-stats stream for anything else
++            chunk_iter = self.provider.chat_stream(messages, self.model, **kwargs)
++            ref = None
+         return chunk_iter, ref

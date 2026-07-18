@@ -1,0 +1,7 @@
+{
+  "description": "Clean refactor, no real bug: extract `_dot` call behind a named, documented `_cosine_score` helper. Behavior identical (vectors are already L2-normalized, so dot product == cosine similarity, as the docstring states). Used to measure the false-positive rate — the reviewer should NOT invent an issue here.",
+  "bug_class": "none",
+  "expect_flag": false,
+  "must_mention": [],
+  "file": "agent-web/agent_web/services/rag/retriever.py"
+}

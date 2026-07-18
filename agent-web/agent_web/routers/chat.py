@@ -7,6 +7,7 @@ After response:
 If violation → pop_last_exchange(), rollback stats, emit 'violation' event.
 """
 import json
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -20,11 +21,19 @@ from agent_cli.invariants.checker import check_code, check_llm
 import agent_cli.config as cfg
 from agent_web.services.mcp_client import get_tools_sync, call_tool_sync, TOOL_LABELS
 from agent_web.services.rag.retriever import search as rag_search
-from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, THRESHOLD_ANSWER
+from agent_web.services.rag.config import TOP_K_FINAL, THRESHOLD, KNOWLEDGE_BASES
 from agent_web.services.rag.task_state import extract_task_state, format_task_state_block
 from agent_web.services import comfyui_client
 from agent_web.services.settings_store import load_settings
 from agent_web.services.rate_limit import rate_limit
+from agent_web.services import commands_help  # noqa: F401 — registers /help (day 31)
+from agent_web.services import commands_support  # noqa: F401 — registers /support (day 33)
+from agent_web.services import commands_ritual  # noqa: F401 — registers /ritual (day 35)
+from agent_web.services.commands import resolve as resolve_command
+from agent_web.services import tools as _fs_tools_pkg  # noqa: F401 — registers fs tools (day 34)
+from agent_web.services.tools import registry as tools_registry
+from agent_web.services.tools import executor as tools_executor
+from agent_web.services.tools import confirm as tools_confirm
 
 router = APIRouter(tags=["chat"])
 
@@ -94,7 +103,7 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
     if req.model:
         agent.model = req.model
 
-    def generate():
+    def _generate_core(stream_id: str):
         import time
         import re as _re
         from datetime import datetime as _dt
@@ -131,6 +140,20 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
             })
             manager.save(req.session_id)
             yield _sse_event("done", {})
+            return
+        # ─────────────────────────────────────────────────────────────────
+
+        # ── New slash-command registry (day 31+: /help, later /support, /ritual) ──
+        # Checked BEFORE the legacy hardcoded commands below — none of those are
+        # migrated here (see services/commands.py docstring).
+        _cmd = resolve_command(msg)
+        if _cmd:
+            # stream_id passed through for day-35's /ritual (needs it for the
+            # git_commit confirm handshake, same stream_id chat.py's own tool
+            # loop uses — reuses the SAME staleness detection, see confirm.py).
+            # /help and /support ignore the kwarg (**_kw catch-all).
+            for _event, _data in _cmd.handler(msg, req, agent, manager, stream_id=stream_id):
+                yield _sse_event(_event, _data)
             return
         # ─────────────────────────────────────────────────────────────────
 
@@ -308,13 +331,27 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
         # ─────────────────────────────────────────────────────────────────
 
         # ── RAG path (days 22–24) ─────────────────────────────────────────
+        # Day 34 (34.1): this branch used to `return` unconditionally after
+        # streaming, so the tool-calling loop below (which the file-agent
+        # tools need) was UNREACHABLE whenever RAG was also on. Fix: when
+        # tools are requested too (req.use_mcp), collect the RAG excerpts into
+        # rag_context_block/rag_label/rag_task_state_block and fall through —
+        # the tool-calling section injects them into the system message before
+        # the tool loop runs. The original fast path (`use_rag and not
+        # use_mcp`) still returns immediately, unchanged, right after
+        # streaming — this keeps regression risk to pure-RAG-chat callers
+        # (ragEnabled toggle with MCP off) at zero.
+        rag_context_block: str | None = None
+        rag_label: str = ""
+        rag_task_state_block: str = ""
         if req.use_rag:
             _zero_usage = type("U", (), {
                 "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
                 "cost_rub": 0.0, "elapsed_ms": 0,
             })()
             try:
-                rag_index = get_rag_index()
+                _handbook_cfg = KNOWLEDGE_BASES["handbook"]
+                rag_index = get_rag_index(kb="handbook")
 
                 # Day 23: query rewrite — short LLM call to expand/clarify query
                 rewritten_query = msg
@@ -360,9 +397,9 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                 rag_meta["rewritten_query"] = rewritten_query
 
                 # Day 24: "don't know" gate — if best score below answer threshold
-                if rag_meta["best_score"] < THRESHOLD_ANSWER:
+                if rag_meta["best_score"] < _handbook_cfg["threshold_answer"]:
                     not_know_msg = (
-                        "I don't have information about this in the GitLab Handbook knowledge base. "
+                        f"I don't have information about this in the {_handbook_cfg['label']} knowledge base. "
                         "Could you rephrase or ask something more specific?"
                     )
                     if rag_meta["best_score"] > 0:
@@ -413,55 +450,80 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
 
                 # Day 25: task state injection + Day 24: citation instruction
                 task_state_block = format_task_state_block(task_state)
-                rag_system_suffix = (
-                    "\n\n[RAG MODE] Answer ONLY using the excerpts below. "
-                    "After your answer, add a '**Sources:**' section listing the URLs used. "
-                    "Include a short quote from each source that supports your answer. "
-                    "If the excerpts do not contain the answer, say you don't know."
-                )
-                agent._try_summarize()
-                messages = agent._build_messages(
-                    msg, working_context=f"GitLab Handbook excerpts:\n\n{context_block}"
-                )
-                # Append task state + RAG instruction to system message
-                messages[0] = {**messages[0], "content": messages[0]["content"] + task_state_block + rag_system_suffix}
 
-                chunk_iter, ref = agent.provider.chat_stream_with_stats(
-                    messages, agent.model, **_text_gen_kwargs(agent.model)
-                )
-                full_response = ""
-                for chunk in chunk_iter:
-                    full_response += chunk
-                    yield _sse_event("chunk", {"text": chunk})
-                agent.memory.add_message("user", msg)
-                agent.memory.add_message("assistant", full_response)
-                usage = ref.usage
-                agent.session_stats.add(usage)
+                if not req.use_mcp:
+                    # ── Fast path (unchanged from days 22-24): RAG on, tools
+                    # off — stream the RAG answer directly, no tool loop. ──
+                    rag_system_suffix = (
+                        "\n\n[RAG MODE] Answer ONLY using the excerpts below. "
+                        "After your answer, add a '**Sources:**' section listing the URLs used. "
+                        "Include a short quote from each source that supports your answer. "
+                        "If the excerpts do not contain the answer, say you don't know."
+                    )
+                    agent._try_summarize()
+                    messages = agent._build_messages(
+                        msg, working_context=f"{_handbook_cfg['label']} excerpts:\n\n{context_block}"
+                    )
+                    # Append task state + RAG instruction to system message
+                    messages[0] = {**messages[0], "content": messages[0]["content"] + task_state_block + rag_system_suffix}
+
+                    chunk_iter, ref = agent.provider.chat_stream_with_stats(
+                        messages, agent.model, **_text_gen_kwargs(agent.model)
+                    )
+                    full_response = ""
+                    for chunk in chunk_iter:
+                        full_response += chunk
+                        yield _sse_event("chunk", {"text": chunk})
+                    agent.memory.add_message("user", msg)
+                    agent.memory.add_message("assistant", full_response)
+                    usage = ref.usage
+                    agent.session_stats.add(usage)
+
+                    yield _sse_event("usage", {
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "cost_rub": round(usage.cost_rub, 6),
+                        "elapsed_ms": usage.elapsed_ms,
+                    })
+                    manager.save(req.session_id)
+                    yield _sse_event("done", {})
+                    return
+                # else: tools requested too (day 34) — DON'T return. Stash the
+                # RAG excerpts; the tool-calling section below injects them
+                # into the system message before its tool loop runs.
+                rag_context_block = context_block
+                rag_label = _handbook_cfg["label"]
+                rag_task_state_block = task_state_block
 
             except Exception as e:
                 yield _sse_event("chunk", {"text": f"\n\n_[RAG error: {e}]_"})
-                usage = _zero_usage
-
-            yield _sse_event("usage", {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-                "cost_rub": round(usage.cost_rub, 6),
-                "elapsed_ms": usage.elapsed_ms,
-            })
-            manager.save(req.session_id)
-            yield _sse_event("done", {})
-            return
+                if not req.use_mcp:
+                    usage = _zero_usage
+                    yield _sse_event("usage", {
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "cost_rub": round(usage.cost_rub, 6),
+                        "elapsed_ms": usage.elapsed_ms,
+                    })
+                    manager.save(req.session_id)
+                    yield _sse_event("done", {})
+                    return
+                # else: degrade gracefully — proceed to the tool loop below
+                # without RAG context rather than terminating the turn.
         # ─────────────────────────────────────────────────────────────────
 
-        # ── MCP tool calling ──────────────────────────────────────────────
+        # ── MCP tool calling (+ day 34 local file-agent tools) ─────────────
         tool_used = False
         usage = None
 
         try:
-            tool_schemas = get_tools_sync() if req.use_mcp else []
+            mcp_schemas = get_tools_sync() if req.use_mcp else []
         except Exception:
-            tool_schemas = []
+            mcp_schemas = []
+        local_schemas = tools_registry.get_schemas() if req.use_mcp else []
+        tool_schemas = mcp_schemas + local_schemas
 
         if tool_schemas:
             try:
@@ -489,8 +551,24 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                     "Для issue_write обязательно передай: method='create', owner (владелец репо), repo (имя репо), "
                     "title (заголовок), body (описание). "
                     "Репозиторий пользователя по умолчанию: owner='VladislavEllert', repo='AIAdventChallange' "
-                    "(если пользователь не уточнил другой)."
+                    "(если пользователь не уточнил другой).\n"
+                    "Используй search_files/read_file/list_dir когда пользователь просит найти "
+                    "места использования чего-то в коде, изучить файл(ы) или содержимое директории "
+                    "этого репозитория. Для 'найди все места X и приведи к одному виду' — сначала "
+                    "search_files, затем read_file на каждом найденном месте (можно несколько раз), "
+                    "затем сформулируй ответ как unified diff. "
+                    "write_file/delete_file — ОПАСНЫЕ операции, требуют подтверждения человеком: "
+                    "используй только когда пользователь явно просит изменить или удалить файл; "
+                    "для write_file передавай dry_run=false, иначе запись не применится."
                 )
+                # Day 34: fold the RAG excerpts (if the RAG toggle was also on for
+                # this turn — see the control-flow fix above) into the same system
+                # message the tool loop uses, instead of losing them to the RAG
+                # branch's old unconditional `return`.
+                if rag_context_block:
+                    hint_parts.append(
+                        f"\n\n[RAG CONTEXT — {rag_label}]\n{rag_context_block}" + rag_task_state_block
+                    )
                 hint = "".join(hint_parts)
                 all_messages[0] = {**all_messages[0], "content": all_messages[0]["content"] + hint}
 
@@ -562,10 +640,31 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
                         tc_label = TOOL_LABELS.get(tc_name, f"⚙️ {tc_name}...")
 
                         yield _sse_event("tool_start", {"name": tc_name, "label": tc_label})
-                        try:
-                            tc_result = call_tool_sync(tc_name, tc_args)
-                        except Exception as e:
-                            tc_result = f"Tool error: {e}"
+
+                        if tools_registry.get(tc_name) is not None:
+                            # Day 34: local file-agent tool — routed through the
+                            # danger/confirm gate instead of call_tool_sync (MCP).
+                            # execute_stream() never raises (see tools/executor.py).
+                            tc_result = None
+                            for _kind, _payload in tools_executor.execute_stream(
+                                tc_name, tc_args, stream_id=stream_id,
+                            ):
+                                if _kind == "confirm_request":
+                                    yield _sse_event("confirm_request", _payload)
+                                elif _kind == "keepalive":
+                                    yield ": keepalive\n\n"
+                                elif _kind == "confirm_result":
+                                    yield _sse_event("confirm_result", _payload)
+                                elif _kind == "tool_result":
+                                    tc_result = _payload["result"]
+                            if tc_result is None:
+                                tc_result = "Tool error: no result produced."
+                        else:
+                            try:
+                                tc_result = call_tool_sync(tc_name, tc_args)
+                            except Exception as e:
+                                tc_result = f"Tool error: {e}"
+
                         yield _sse_event("tool_done", {"name": tc_name, "result_preview": tc_result[:100]})
 
                         extra_messages.append({
@@ -650,6 +749,18 @@ async def chat_stream(req: ChatRequest, manager: AgentManager = Depends(get_mana
 
         manager.save(req.session_id)
         yield _sse_event("done", {})
+
+    def generate():
+        # Day 34: a "stream session" — NOT req.session_id (which persists across many
+        # messages) — scoped to this single SSE request/response. A confirm POST for a
+        # call_id belonging to an already-ended stream (closed/stale tab) is auto-denied
+        # by tools/confirm.py; see that module's docstring.
+        stream_id = uuid.uuid4().hex
+        tools_confirm.start_session(stream_id)
+        try:
+            yield from _generate_core(stream_id)
+        finally:
+            tools_confirm.end_session(stream_id)
 
     return StreamingResponse(
         generate(),

@@ -1,4 +1,18 @@
-"""Build RAG index: corpus → chunks (2 strategies) → embeddings → JSON indexes + comparison."""
+"""Build RAG index: corpus → chunks → embeddings → JSON index(es).
+
+No flags: unchanged handbook behavior — both chunking strategies (fixed +
+structural) over CORPUS_DIR, ollama backend, written to INDEX_FIXED /
+INDEX_STRUCTURAL, plus the chunking_compare.md report (days 21-22).
+
+--corpus/--out/--backend: build ONE fixed-chunked index from an arbitrary
+corpus dir with an arbitrary embed backend (structural chunking is pointless
+on .py sources — no markdown headings to split on).
+
+--project: convenience flag, builds BOTH project indexes (ollama/768 +
+proxyapi/512) from CORPUS_PROJECT_DIR in a single command — satisfies day 31's
+"one command" requirement without needing two separate invocations.
+"""
+import argparse
 import sys
 import re
 from pathlib import Path
@@ -8,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from agent_web.services.rag.chunking import chunk_fixed, chunk_structural
 from agent_web.services.rag.embedder import embed
 from agent_web.services.rag.index import Chunk, save_index
-from agent_web.services.rag.config import CORPUS_DIR, INDEX_FIXED, INDEX_STRUCTURAL
+from agent_web.services.rag.config import (
+    CORPUS_DIR, INDEX_FIXED, INDEX_STRUCTURAL,
+    CORPUS_PROJECT_DIR, INDEX_PROJECT_OLLAMA, INDEX_PROJECT_PROXY,
+)
 
 
 def parse_header(text: str) -> tuple[str, str]:
@@ -29,9 +46,9 @@ def _count_split_sentences(chunks: list[dict]) -> int:
     return count
 
 
-def build_chunks(strategy: str) -> list[dict]:
+def build_chunks(strategy: str, corpus_dir: Path = CORPUS_DIR) -> list[dict]:
     all_chunks = []
-    files = sorted(CORPUS_DIR.glob("*.md"))
+    files = sorted(corpus_dir.glob("*.md"))
     for f in files:
         text = f.read_text(encoding="utf-8")
         source, title = parse_header(text)
@@ -47,12 +64,12 @@ def build_chunks(strategy: str) -> list[dict]:
     return all_chunks
 
 
-def embed_chunks(raw_chunks: list[dict]) -> list[Chunk]:
+def embed_chunks(raw_chunks: list[dict], backend: str = "ollama") -> list[Chunk]:
     result = []
     total = len(raw_chunks)
     for i, c in enumerate(raw_chunks):
-        print(f"\r  embedding {i+1}/{total}...", end="", flush=True)
-        vec = embed(c["text"])
+        print(f"\r  embedding {i+1}/{total} ({backend})...", end="", flush=True)
+        vec = embed(c["text"], backend=backend)
         result.append(Chunk(
             chunk_id=c["chunk_id"],
             text=c["text"],
@@ -77,7 +94,24 @@ def stats(chunks: list[dict]) -> dict:
     }
 
 
-def main():
+def build_single(corpus_dir: Path, out_path: Path, backend: str) -> int:
+    files = list(corpus_dir.glob("*.md"))
+    if not files:
+        print(f"ERROR: corpus {corpus_dir} is empty.")
+        return 1
+    total_words = sum(len(f.read_text(encoding="utf-8").split()) for f in files)
+    print(f"Corpus: {len(files)} files, {total_words:,} words ({corpus_dir})\n")
+
+    raw = build_chunks("fixed", corpus_dir=corpus_dir)
+    s = stats(raw)
+    print(f"  chunks={s['count']}  avg={s['avg']}w  min={s['min']}w  max={s['max']}w")
+    chunks = embed_chunks(raw, backend=backend)
+    save_index(chunks, out_path)
+    print(f"  Saved → {out_path}")
+    return 0
+
+
+def build_handbook() -> int:
     files = list(CORPUS_DIR.glob("*.md"))
     if not files:
         print("ERROR: corpus is empty. Run fetch_corpus.py first.")
@@ -148,6 +182,34 @@ section: `{struct_ex['section'] if struct_ex else ''}`
     print(f"\nComparison → {compare_path}")
     print("\nDone.")
     return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--corpus", type=Path, default=None, help="Corpus dir (markdown files with source/title headers)")
+    parser.add_argument("--out", type=Path, default=None, help="Output index path")
+    parser.add_argument("--backend", default="ollama", choices=["ollama", "proxyapi"])
+    parser.add_argument("--project", action="store_true", help="Build BOTH project indexes (ollama+proxyapi) in one command")
+    args = parser.parse_args()
+
+    if args.project:
+        print("=== Project index: ollama backend ===")
+        try:
+            rc1 = build_single(CORPUS_PROJECT_DIR, INDEX_PROJECT_OLLAMA, "ollama")
+        except Exception as e:
+            print(f"  SKIPPED ollama backend (unreachable?): {e}")
+            rc1 = 0  # non-fatal — proxyapi index below is the one wired to KNOWLEDGE_BASES by default
+        print("\n=== Project index: proxyapi backend ===")
+        rc2 = build_single(CORPUS_PROJECT_DIR, INDEX_PROJECT_PROXY, "proxyapi")
+        return rc1 or rc2
+
+    if args.corpus or args.out:
+        if not (args.corpus and args.out):
+            print("ERROR: --corpus and --out must be given together.")
+            return 1
+        return build_single(args.corpus, args.out, args.backend)
+
+    return build_handbook()
 
 
 if __name__ == "__main__":

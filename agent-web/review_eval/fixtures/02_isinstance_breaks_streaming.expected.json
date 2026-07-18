@@ -1,0 +1,7 @@
+{
+  "description": "Real bug class (week 6, day 27, memory-bank/progress.md): `isinstance(provider, ProxyAPIProvider)` broke streaming once `self.provider` is a `DispatchProvider` wrapper (the isinstance check is never true, so real ProxyAPI calls fall into the no-stats branch and lose token/cost stats).",
+  "bug_class": "isinstance-breaks-dispatch-wrapper",
+  "expect_flag": true,
+  "must_mention": ["isinstance", "DispatchProvider", "ProxyAPIProvider"],
+  "file": "agent-web/agent_web/services/agent_manager.py"
+}

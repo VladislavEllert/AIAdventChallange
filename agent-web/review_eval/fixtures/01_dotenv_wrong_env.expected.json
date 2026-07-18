@@ -1,0 +1,7 @@
+{
+  "description": "Real bug class (week 6, day 27, memory-bank/progress.md): dotenv frame-based search resolved agent-cli/.env instead of the caller's .env, silently missing OLLAMA_CHAT_URL.",
+  "bug_class": "dotenv-wrong-env-resolution",
+  "expect_flag": true,
+  "must_mention": ["dotenv", "env", "load_dotenv"],
+  "file": "agent-cli/agent_cli/quickstart.py"
+}

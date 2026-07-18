@@ -9,8 +9,9 @@ def search(
     top_k: int = TOP_K_FINAL,
     threshold: float = THRESHOLD,
     top_k_raw: int = TOP_K_RAW,
+    backend: str = "ollama",
 ) -> tuple[list[tuple[Chunk, float]], dict]:
-    q_vec = embed(query)
+    q_vec = embed(query, backend=backend)
     scores = [
         (_dot(q_vec, c.embedding), c) for c in index
     ]

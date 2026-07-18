@@ -44,18 +44,19 @@ discussion phase.
 
 ### Exec-agents
 
-None written yet — this harness ships only the stack-agnostic role agents (`planner`,
-`skeptic`, `reviewer`, `debugger`, `describer`, `design-verifier`). Write a project-specific
-exec-agent (`.claude/agents/<name>.md`) when a scope needs one (e.g. a `week-07` agent for the
-new challenge project).
+Stack-agnostic role agents: `planner`, `skeptic`, `reviewer`, `debugger`, `describer`,
+`design-verifier`. Project exec-agent: `week07-dev-assistant` (`.claude/agents/week07-dev-assistant.md`)
+— writes code for the week-07 growing dev-assistant project.
 
 **Exec-routing for `/build`:**
 
 | Scope | Agent |
 | --- | --- |
-| `agent-web/**` | Ask user — no dedicated exec-agent yet |
-| `week-07/**` (or new week-7 project folder) | Ask user — no dedicated exec-agent yet |
-| Infra/config with no owning agent | Ask the user which agent owns it |
+| `agent-web/**`, `agent-cli/**`, `mcp-server/**` | `week07-dev-assistant` |
+| `.github/workflows/ai-review.yml` | `week07-dev-assistant` |
+| `week-07/**` | `week07-dev-assistant` |
+| Root `README.md` + `memory-bank/progress.md` doc-sync (per-phase) | `week07-dev-assistant` |
+| Other infra/config with no owning agent | Ask the user which agent owns it |
 
 ---
 

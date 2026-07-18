@@ -1,0 +1,7 @@
+{
+  "description": "Real bug class (week 6, Windows deploy, memory-bank/progress.md): httpx.Client created without trust_env=False picked up a system SOCKS proxy and broke every local/LAN call (Ollama/ComfyUI/metrics/MCP). This diff regresses a fixed client back to the buggy form.",
+  "bug_class": "httpx-trust-env-socks-proxy",
+  "expect_flag": true,
+  "must_mention": ["trust_env", "proxy", "SOCKS"],
+  "file": "agent-web/agent_web/services/comfyui_client.py"
+}

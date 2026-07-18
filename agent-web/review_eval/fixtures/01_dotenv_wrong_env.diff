@@ -1,0 +1,23 @@
+diff --git a/agent-cli/agent_cli/quickstart.py b/agent-cli/agent_cli/quickstart.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/agent-cli/agent_cli/quickstart.py
+@@ -0,0 +1,14 @@
++"""One-off script: print the resolved model + Ollama URL for a smoke check."""
++from dotenv import load_dotenv
++import os
++
++
++def load_config() -> dict:
++    # Bare, frame-based search — walks up from wherever THIS file happens to
++    # sit (agent-cli/agent_cli/), not from the caller's cwd. When this module
++    # is imported from agent-web (which has its own .env with
++    # OLLAMA_CHAT_URL), this silently resolves agent-cli/.env instead and
++    # OLLAMA_CHAT_URL is never seen — Ollama calls quietly fall back to
++    # http://localhost:11434/v1 even when the real box is on the LAN.
++    load_dotenv()
++    return {
++        "ollama_url": os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/v1"),
++        "model": os.getenv("DEFAULT_MODEL", "ollama/qwen3:4b"),
++    }

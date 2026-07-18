@@ -30,6 +30,19 @@ export interface ChatTaskState {
   constraints: string[]
 }
 
+// Day 34: human-in-the-loop confirmation for DANGEROUS tools (write_file/delete_file).
+export interface ChatConfirmRequest {
+  call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  reason: string
+}
+
+export interface ChatConfirmResult {
+  call_id: string
+  approved: boolean
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void
   onUsage: (u: ChatUsage) => void
@@ -41,8 +54,26 @@ export interface ChatCallbacks {
   onTaskState?: (ts: ChatTaskState) => void
   onImageProgress?: (pct: number) => void
   onImage?: (dataB64: string) => void
+  onConfirmRequest?: (req: ChatConfirmRequest) => void
+  onConfirmResult?: (res: ChatConfirmResult) => void
   onDone: () => void
   onError: (e: Error) => void
+}
+
+// Day 34: resolve a pending DANGEROUS tool call from the confirm modal.
+export async function confirmTool(call_id: string, approved: boolean): Promise<boolean> {
+  try {
+    const resp = await fetch(`${BASE}/tools/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call_id, approved }),
+    })
+    if (!resp.ok) return false
+    const data = await resp.json()
+    return !!data.ok
+  } catch {
+    return false
+  }
 }
 
 export async function streamChat(
@@ -110,6 +141,8 @@ export async function streamChat(
           else if (event === 'task_state') callbacks.onTaskState?.(data)
           else if (event === 'image_progress') callbacks.onImageProgress?.(data.pct ?? 0)
           else if (event === 'image') callbacks.onImage?.(data.data_b64 ?? '')
+          else if (event === 'confirm_request') callbacks.onConfirmRequest?.(data)
+          else if (event === 'confirm_result') callbacks.onConfirmResult?.(data)
           else if (event === 'done') callbacks.onDone()
         } catch {}
         event = ''

@@ -6,6 +6,23 @@ build-backend = "setuptools.build_meta"
 name = "agent-web"
 version = "0.1.0"
 requires-python = ">=3.11"
+# Day 32.0: agent_web imports agent_cli.* (dependencies.py: DispatchProvider,
+# SessionStore, DEFAULT_MODEL; review/__main__.py: same) and agent_cli owns the
+# `openai` dependency — a plain `pip install -e ./agent-web` in a clean venv
+# fails on import without it.
+#
+# `agent-cli` isn't published (it's a monorepo sibling package with no PyPI
+# presence), and pip rejects relative `file://` URIs in a dependency
+# specifier here (tried `agent-cli @ file://${PROJECT_ROOT}/../agent-cli` —
+# pip 25 raises "non-local file URIs are not supported", it does not expand
+# ${PROJECT_ROOT} or resolve relative paths in this position). So instead of
+# a fragile pyproject-level pin, every install site installs both packages
+# together explicitly:
+#   pip install -e ./agent-cli -e ./agent-web
+# — the CI workflow (.github/workflows/ai-review.yml) and local dev setup
+# both do this. Verified in a clean venv: that command + then
+# `python -c "import agent_web.services.review"` succeeds; a bare
+# `pip install -e ./agent-web` does not (ModuleNotFoundError: agent_cli).
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

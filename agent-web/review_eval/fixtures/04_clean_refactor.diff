@@ -1,0 +1,30 @@
+diff --git a/agent-web/agent_web/services/rag/retriever.py b/agent-web/agent_web/services/rag/retriever.py
+index 5555555..6666666 100644
+--- a/agent-web/agent_web/services/rag/retriever.py
++++ b/agent-web/agent_web/services/rag/retriever.py
+@@ -1,6 +1,10 @@
+ from .index import Chunk
+ from .embedder import embed
+ from .config import TOP_K_RAW, TOP_K_FINAL, THRESHOLD
+
+
++def _cosine_score(query_vec: list[float], chunk_vec: list[float]) -> float:
++    """Both vectors are already L2-normalized (see embedder._l2_normalize), so
++    a plain dot product IS the cosine similarity — no extra division needed."""
++    return _dot(query_vec, chunk_vec)
++
++
+ def search(
+     query: str,
+     index: list[Chunk],
+     top_k: int = TOP_K_FINAL,
+     threshold: float = THRESHOLD,
+     top_k_raw: int = TOP_K_RAW,
+     backend: str = "ollama",
+ ) -> tuple[list[tuple[Chunk, float]], dict]:
+     q_vec = embed(query, backend=backend)
+     scores = [
+-        (_dot(q_vec, c.embedding), c) for c in index
++        (_cosine_score(q_vec, c.embedding), c) for c in index
+     ]
+     scores.sort(key=lambda x: x[0], reverse=True)

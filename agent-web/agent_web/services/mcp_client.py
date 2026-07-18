@@ -18,6 +18,10 @@ except ImportError:
 MCP_SERVERS: dict[str, str] = {
     "finance": os.getenv("MCP_SERVER_URL", "http://194.226.115.120:8001/mcp"),
     "github":  os.getenv("MCP_GITHUB_URL", "http://194.226.115.120:8003/mcp"),
+    # Day 31: local project server (git/fs facts) — runs on THIS machine, not the VPS,
+    # since the VPS can't see the working copy. Degrades gracefully if not running
+    # (same try/except-per-server pattern as finance/github below).
+    "project": os.getenv("MCP_PROJECT_URL", "http://127.0.0.1:8002/mcp"),
 }
 
 # Extra headers per server (e.g. GitHub OAuth token)
@@ -44,6 +48,14 @@ TOOL_LABELS: dict[str, str] = {
     "issue_write":           "🐙 Создаю/обновляю GitHub Issue...",
     "issue_read":            "🐙 Читаю GitHub Issue...",
     "list_issues":           "🐙 Получаю список Issues...",
+    # Project (local)
+    "git_current_branch":    "🌿 Узнаю текущую ветку...",
+    "git_status":            "🌿 Смотрю git status...",
+    "git_diff":               "🌿 Смотрю git diff...",
+    "list_project_files":    "📁 Ищу файлы проекта...",
+    # Support tickets (day 33, local)
+    "list_tickets":          "🎫 Смотрю список тикетов...",
+    "get_ticket":            "🎫 Читаю тикет...",
 }
 
 

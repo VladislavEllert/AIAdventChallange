@@ -1,7 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { useAppStore } from '../../stores/useAppStore'
 import { useChatStore } from '../../stores/useChatStore'
-import { streamChat } from '../../api/chat'
+import { streamChat, confirmTool } from '../../api/chat'
+import ConfirmToolModal from './ConfirmToolModal'
 import { listModels } from '../../api/models'
 import { createSession } from '../../api/sessions'
 import { listInvariants, addInvariant } from '../../api/invariants'
@@ -20,6 +21,7 @@ const SLASH_COMMANDS = [
   { cmd: '/invariants', desc: 'Управление инвариантами', usage: '/invariants list|add <текст>' },
   { cmd: '/memory', desc: 'Показать слои памяти', usage: '/memory' },
   { cmd: '/help', desc: 'Список команд', usage: '/help' },
+  { cmd: '/support', desc: 'Поддержка по тикету (контекст + RAG)', usage: '/support TICKET-ID вопрос' },
   { cmd: '/mcp', desc: 'Список MCP-инструментов на VPS', usage: '/mcp' },
   { cmd: '/ping', desc: 'Live мониторинг цены (акция или индекс)', usage: '/ping IMOEX [сек]' },
   { cmd: '/history', desc: 'Сводка из SQLite за N минут (24/7 сбор)', usage: '/history IMOEX [минуты]' },
@@ -78,7 +80,7 @@ export default function ChatInput() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen)
   const setRightPanelTab = useAppStore((s) => s.setRightPanelTab)
   const isStreaming = useChatStore((s) => s.isStreaming)
-  const { addMessage, appendChunk, finalizeMessage, appendSources, appendRagMeta, appendTaskState, setImageProgress, setGeneratedImage, setStreaming, addCost, setViolation, setToolStatus, reset } = useChatStore()
+  const { addMessage, appendChunk, finalizeMessage, appendSources, appendRagMeta, appendTaskState, setImageProgress, setGeneratedImage, setStreaming, addCost, setViolation, setToolStatus, setPendingConfirm, reset } = useChatStore()
   const isImageModel = (activeModel ?? '').startsWith('comfyui/')
 
   const stopStreaming = useCallback(() => {
@@ -86,6 +88,19 @@ export default function ChatInput() {
     abortRef.current = null
     setStreaming(false)
   }, [setStreaming])
+
+  const pendingConfirm = useChatStore((s) => s.pendingConfirm)
+
+  // Day 34: Allow/Deny handlers for ConfirmToolModal. Optimistically clear the
+  // modal locally too — the SSE stream also emits confirm_result once the
+  // server-side wait unblocks, which does the same via onConfirmResult, so
+  // this is idempotent either way.
+  const resolveConfirm = useCallback(async (approved: boolean) => {
+    if (!pendingConfirm) return
+    const callId = pendingConfirm.call_id
+    setPendingConfirm(null)
+    await confirmTool(callId, approved)
+  }, [pendingConfirm, setPendingConfirm])
 
   // Filter commands by typed prefix
   const filteredCmds = SLASH_COMMANDS.filter((c) =>
@@ -166,13 +181,20 @@ export default function ChatInput() {
     }
 
     if (base === '/help') {
-      addMessage({
-        id: crypto.randomUUID(), role: 'assistant',
-        content: SLASH_COMMANDS.map((c) =>
-          `**${c.cmd}** — ${c.desc}\n\`${c.usage}\``
-        ).join('\n\n'),
-      })
-      return true
+      // No-args /help stays a pure client-side command list (unchanged UX).
+      // `/help <question>` (day 31) is NOT handled here — it needs a backend
+      // round-trip (RAG over the project KB + a real git-branch MCP call), so
+      // fall through (return false) and let send() forward it to /api/chat/stream.
+      if (parts.length === 1) {
+        addMessage({
+          id: crypto.randomUUID(), role: 'assistant',
+          content: SLASH_COMMANDS.map((c) =>
+            `**${c.cmd}** — ${c.desc}\n\`${c.usage}\``
+          ).join('\n\n'),
+        })
+        return true
+      }
+      return false
     }
 
     if (base === '/model') {
@@ -366,6 +388,8 @@ export default function ChatInput() {
         onTaskState: (ts) => appendTaskState(assistantId, ts),
         onImageProgress: (pct) => setImageProgress(assistantId, pct),
         onImage: (dataB64) => setGeneratedImage(assistantId, dataB64),
+        onConfirmRequest: (req) => setPendingConfirm(req),
+        onConfirmResult: () => setPendingConfirm(null),
         onDone: () => { setToolStatus(null); setStreaming(false); abortRef.current = null },
         onError: (e) => {
           // Network-level failure (server unreachable, connection dropped) —
@@ -389,7 +413,7 @@ export default function ChatInput() {
   }, [text, imageB64, imagePreview, isStreaming, activeSessionId, activeAgentPersona, activeModel, isImageModel,
       activeProfileName, ragEnabled, mcpEnabled, executeCommand, addMessage, appendChunk, finalizeMessage,
       appendSources, appendRagMeta, appendTaskState, setImageProgress, setGeneratedImage, setStreaming, addCost,
-      setViolation, setToolStatus])
+      setViolation, setToolStatus, setPendingConfirm])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -403,6 +427,15 @@ export default function ChatInput() {
 
   return (
     <div style={{ padding: '0 16px 20px', position: 'relative' }}>
+
+      {/* Day 34: DANGEROUS tool confirmation modal */}
+      {pendingConfirm && (
+        <ConfirmToolModal
+          request={pendingConfirm}
+          onAllow={() => resolveConfirm(true)}
+          onDeny={() => resolveConfirm(false)}
+        />
+      )}
 
       {/* Slash command popover */}
       {showCommands && (
