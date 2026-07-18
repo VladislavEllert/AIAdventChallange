@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Playwright e2e output — regenerated per run, see .claude/skills/e2e-web
+e2e-results
+e2e-report
+playwright-report
+test-results
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -6,7 +6,7 @@ Stored in Memory.working per session.
 import json
 
 # Fallback when the caller doesn't pass an active model (e.g. old call sites).
-DEFAULT_MODEL = "ollama/qwen3:4b"
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 _SYSTEM = (
     "You track incremental task state for a long conversation. You are given the "
