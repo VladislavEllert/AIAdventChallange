@@ -15,7 +15,7 @@ agent-cli/data/sessions.db-shm
 agent-cli/data/sessions.db-wal
 
 # Xcode / iOS
-build/
+AgentChat/build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
