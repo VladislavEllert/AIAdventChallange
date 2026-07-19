@@ -74,7 +74,8 @@ def git_diff(path: str = "") -> str:
     Optional `path`: restrict to a single file (relative to repo root)."""
     args = ["diff"]
     if path:
-        args.append(path)
+        # "--" stops git from parsing `path` as a flag (e.g. path="--output=...").
+        args.extend(["--", path])
     out = _run_git(args)
     return out if out else "no unstaged changes"
 

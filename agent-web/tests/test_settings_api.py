@@ -19,6 +19,14 @@ def test_get_settings_has_day29_defaults(client):
         assert key in body
 
 
+def test_default_model_is_gpt4o_mini(client):
+    # Phase 0: default_model switched from ollama/qwen3:4b (unreachable off-LAN/CI)
+    # to openai/gpt-4o-mini in both the _DEFAULTS dict and the committed
+    # data/settings.json (whichever wins here, this must be the result).
+    r = client.get("/api/settings")
+    assert r.json()["default_model"] == "openai/gpt-4o-mini"
+
+
 def test_put_settings_updates_text_params(client):
     r = client.put("/api/settings", json={"temperature": 1.2, "max_tokens": 512, "top_p": 0.8})
     assert r.status_code == 200

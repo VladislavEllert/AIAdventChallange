@@ -55,6 +55,26 @@ def test_git_status_dirty(git_repo, monkeypatch):
     assert "new_file.txt" in ps.git_status()
 
 
+def test_git_diff_with_path(git_repo, monkeypatch):
+    (git_repo / "README.md").write_text("# test\nchanged\n", encoding="utf-8")
+    ps = _reload_project_server(git_repo, monkeypatch)
+    out = ps.git_diff(path="README.md")
+    assert "changed" in out
+
+
+def test_git_diff_rejects_flag_shaped_path_as_literal_arg(git_repo, monkeypatch):
+    # Regression: a `path` value shaped like a git flag (e.g. "--output=...")
+    # must not be parsed by git as a flag — the "--" separator forces it to be
+    # treated as a literal pathspec, so git errors on the nonexistent path
+    # instead of writing to/reading an attacker-chosen location.
+    ps = _reload_project_server(git_repo, monkeypatch)
+    ps.git_diff(path="--output=/tmp/pwned-by-test-git-diff-injection")
+    # The real assertion: git never wrote to the attacker-chosen path. With the
+    # "--" separator this value is treated as a (non-matching) literal pathspec,
+    # not a flag — without it, git would have written the diff output there.
+    assert not Path("/tmp/pwned-by-test-git-diff-injection").exists()
+
+
 def test_list_project_files_lists_repo_root(git_repo, monkeypatch):
     ps = _reload_project_server(git_repo, monkeypatch)
     out = ps.list_project_files()

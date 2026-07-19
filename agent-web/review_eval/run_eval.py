@@ -198,6 +198,13 @@ def main(argv: list[str] | None = None) -> None:
     avg_cost = sum(costs) / len(costs) if costs else 0.0
     pct_successful = 100.0 * n_ok / len(rows) if rows else 0.0
 
+    print(f"\nRecall (баги найдены / всего багов): {recall:.0%} "
+          f"({sum(1 for r in buggy if r['flagged'])}/{len(buggy)})")
+    print(f"False positive rate: {fp_rate:.0%} ({sum(1 for r in clean if r['flagged'])}/{len(clean)})")
+    print(f"Latency p50 / p95 / p99: {p50:.0f}ms / {p95:.0f}ms / {p99:.0f}ms")
+    print(f"Cost за прогон (среднее): {avg_cost:.4f}₽")
+    print(f"% успешных прогонов: {pct_successful:.0f}%")
+
     index_hash = _index_content_hash()
     run_no = _next_run_number()
     label_suffix = f" — {args.label}" if args.label else ""
