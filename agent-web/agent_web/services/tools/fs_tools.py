@@ -89,8 +89,10 @@ def _search_files(pattern: str, path: str = ".", max_results: int = 100) -> str:
         return "Error: ripgrep ('rg') is not installed on this machine."
     try:
         result = subprocess.run(
-            ["rg", "--line-number", "--no-heading", "--max-count", "20",
+            ["rg", "--line-number", "--no-heading", "--max-count", "20", "--max-columns", "500",
              "-g", "!.git", "-g", "!.venv", "-g", "!node_modules", "-g", "!.env", "-g", "!*.key",
+             "-g", "!**/data/rag/**",  # generated RAG index/corpus — a matched line here can be
+             # the entire minified index JSON on one line (megabytes), not useful search output
              pattern, str(base)],
             capture_output=True, text=True, timeout=15,
         )
@@ -111,7 +113,13 @@ def _search_files(pattern: str, path: str = ".", max_results: int = 100) -> str:
             out.append(f"{rel}:{rest}")
         except Exception:
             out.append(line)
-    return "\n".join(out) if out else "(no matches)"
+    # Defense in depth: --max-columns caps rg's own match-line length, but cap the
+    # joined text too so one pathological line can't still blow the LLM context.
+    joined = "\n".join(out) if out else "(no matches)"
+    MAX_CHARS = 8_000
+    if len(joined) > MAX_CHARS:
+        joined = joined[:MAX_CHARS] + f"\n... (truncated, {len(joined) - MAX_CHARS} more chars)"
+    return joined
 
 
 register(Tool(

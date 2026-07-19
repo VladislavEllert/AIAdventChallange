@@ -164,3 +164,37 @@ def test_delete_file_removes_in_sandbox_file(repo, monkeypatch):
     result = fs._delete_file("sub/file.txt")
     assert "Deleted" in result
     assert not target.exists()
+
+
+# ── search_files: generated RAG data excluded, output size capped ──────────
+# Regression: a match inside data/rag/index_*.json (the RAG index — chunk text
+# embedded as one JSON blob, no newlines) used to come back as a single
+# multi-megabyte "line", blowing the LLM's context window on the next
+# completion call. That call then failed, and chat.py's broad except silently
+# fell back to a context-free response — looked exactly like "the model has
+# no file access", live-reproduced 3/3 in the browser before this fix.
+def test_search_files_excludes_data_rag(repo, monkeypatch):
+    if not __import__("shutil").which("rg"):
+        pytest.skip("ripgrep not installed")
+    rag_dir = repo / "data" / "rag"
+    rag_dir.mkdir(parents=True)
+    (rag_dir / "index_project_proxy.json").write_text(
+        "MARKER_TOKEN " * 50_000, encoding="utf-8"  # one huge line, no newlines
+    )
+    (repo / "real_source.py").write_text("MARKER_TOKEN = 1\n", encoding="utf-8")
+    fs = _reload_fs_tools(repo, monkeypatch)
+    result = fs._search_files(pattern="MARKER_TOKEN")
+    assert "data/rag" not in result
+    assert "real_source.py" in result
+    assert len(result) < 10_000
+
+
+def test_search_files_caps_total_output_size(repo, monkeypatch):
+    if not __import__("shutil").which("rg"):
+        pytest.skip("ripgrep not installed")
+    # A single pathological long match line (not inside data/rag/) must still
+    # not blow the output — --max-columns plus the joined-text cap both apply.
+    (repo / "huge_line.txt").write_text("MARKER " * 200_000, encoding="utf-8")
+    fs = _reload_fs_tools(repo, monkeypatch)
+    result = fs._search_files(pattern="MARKER")
+    assert len(result) < 10_000
