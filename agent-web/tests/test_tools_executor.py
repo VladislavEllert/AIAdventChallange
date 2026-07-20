@@ -107,6 +107,44 @@ def test_dangerous_write_approved_actually_writes_disk(env, tmp_path):
     assert target.read_text(encoding="utf-8") == "real content"
 
 
+def test_dangerous_write_approved_writes_even_if_llm_omitted_dry_run(env, tmp_path):
+    # Regression: the LLM's tool-call arguments for write_file often omit
+    # `dry_run` entirely (real gpt-4o-mini behavior, reproduced live in the
+    # browser) — _write_file's own default is dry_run=True, so an approved
+    # write silently no-op'd (just returned a preview string) despite the
+    # human clicking "Разрешить". A human approval on the confirm modal IS
+    # the real-write authorization; the executor must force dry_run=False
+    # after approval, not rely on the LLM having remembered to pass it.
+    registry, executor, confirm = env
+    confirm.start_session("s-approve-no-dry-run")
+    target = tmp_path / "new.txt"
+
+    result_box = {}
+
+    def run():
+        result_box["r"] = executor.execute(
+            "write_file", {"path": "new.txt", "content": "real content"},  # no dry_run key
+            stream_id="s-approve-no-dry-run", confirm_timeout=5.0, confirm_poll_interval=0.03,
+        )
+
+    t = threading.Thread(target=run)
+    t.start()
+    deadline = time.monotonic() + 2.0
+    call_id = None
+    while time.monotonic() < deadline and call_id is None:
+        pending = confirm.list_pending()
+        if pending:
+            call_id = pending[0].call_id
+        time.sleep(0.01)
+    assert call_id is not None
+    confirm.resolve(call_id, True)
+    t.join(timeout=5.0)
+
+    assert result_box["r"]["ok"] is True
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == "real content"
+
+
 def test_dangerous_delete_timeout_auto_denies(env, tmp_path):
     registry, executor, confirm = env
     confirm.start_session("s-timeout")

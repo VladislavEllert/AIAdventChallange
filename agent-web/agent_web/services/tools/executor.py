@@ -56,6 +56,16 @@ def execute_stream(
             yield ("tool_result", {"ok": False, "denied": True, "result": "Operation denied by user (or confirmation timed out)."})
             return
 
+        # A human clicking "Разрешить" on the confirm modal IS the real-write
+        # authorization — that's the whole point of gating this tool behind
+        # human-in-the-loop confirmation. Don't also require the LLM to have
+        # remembered to pass dry_run=false in its own tool-call arguments: it
+        # often omits the field entirely (defaults to dry_run=True), which
+        # silently turned every approved write into a no-op preview — found
+        # live, reproduced with a real browser click, not a hypothetical.
+        if "dry_run" in arguments or tool_name == "write_file":
+            arguments = {**arguments, "dry_run": False}
+
     try:
         result = tool.execute(**arguments)
         yield ("tool_result", {"ok": True, "denied": False, "result": result})
