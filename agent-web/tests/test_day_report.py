@@ -77,7 +77,7 @@ def test_draft_strips_header_and_separator_if_model_echoes_them():
         return (
             "| Неделя | День | Задача | Статус | Код | Видео |\n"
             "|--------|------|--------|--------|-----|-------|\n"
-            "| 07     | 99   | test   | done   | [week-07/day-99](week-07/day-99/) | todo |\n"
+            "| 07     | 99   | some real description | done   | [week-07/day-99](week-07/day-99/) | todo |\n"
         )
 
     row = day_report.draft(collected, chat_fn=chatty_fn, model=day_report.MODEL)
@@ -94,7 +94,7 @@ def _collected():
 
 
 def test_verify_accepts_well_formed_row():
-    row = "| 07 | 99 | test task | done | [week-07/day-99](week-07/day-99/) | todo |"
+    row = "| 07 | 99 | some real description of the work done | done | [week-07/day-99](week-07/day-99/) | todo |"
     vr = day_report.verify(row, _collected())
     assert vr.ok
     assert vr.errors == []
@@ -114,7 +114,7 @@ def test_verify_rejects_row_not_wrapped_in_pipes():
 
 
 def test_verify_rejects_missing_link_in_code_column():
-    row = "| 07 | 99 | test task | done | week-07/day-99 no link | todo |"
+    row = "| 07 | 99 | some real description of the work done | done | week-07/day-99 no link | todo |"
     vr = day_report.verify(row, _collected())
     assert not vr.ok
     assert any("link" in e for e in vr.errors)
@@ -124,7 +124,7 @@ def test_verify_rejects_hallucinated_video_link():
     """Explicit plan acceptance case: draft claims a video link exists when
     none was recorded — collect() never gathers video evidence, so ANY
     non-'todo' Видео claim must be rejected."""
-    row = "| 07 | 99 | test task | done | [x](y) | https://www.loom.com/share/fakefakefake |"
+    row = "| 07 | 99 | some real description of the work done | done | [x](y) | https://www.loom.com/share/fakefakefake |"
     vr = day_report.verify(row, _collected())
     assert not vr.ok
     assert any("hallucinat" in e.lower() or "video" in e.lower() or "видео" in e.lower() for e in vr.errors)
@@ -191,13 +191,37 @@ def test_run_ritual_rejected_draft_has_no_patch(repo):
     assert result.patch is None
 
 
+def test_run_ritual_clean_repo_refuses_to_draft_blank_row(repo):
+    # Regression: reproduced live 2026-07-20 — ran /ritual on an already-clean
+    # repo (nothing uncommitted). collect() correctly found no changed files,
+    # but draft() still produced *some* row ("| 07 | 35 |  | todo | ... |")
+    # with an empty Задача cell, which passed every structural check (6
+    # columns, valid link, valid status) and overwrote a real, detailed
+    # existing progress line with a blank one after human approval — required
+    # a manual git revert to fix. run_ritual must refuse to even call draft()
+    # when there's nothing to report, not rely on verify() catching it after.
+    (repo / "memory-bank").mkdir()
+    (repo / "memory-bank" / "progress.md").write_text(_HEADER, encoding="utf-8")
+    (repo / "README.md").write_text(_HEADER, encoding="utf-8")
+    _run(["add", "-A"], cwd=repo)
+    _run(["commit", "-m", "seed"], cwd=repo)
+
+    def should_not_be_called(messages, model):
+        raise AssertionError("draft() must not be called when collect() found nothing")
+
+    result = day_report.run_ritual(repo, "07", "99", chat_fn=should_not_be_called)
+    assert not result.verify_result.ok
+    assert result.patch is None
+    assert any("nothing to report" in e for e in result.verify_result.errors)
+
+
 def test_run_ritual_approved_draft_has_patch(repo):
     (repo / "memory-bank").mkdir()
     (repo / "memory-bank" / "progress.md").write_text(_HEADER, encoding="utf-8")
     (repo / "README.md").write_text(_HEADER, encoding="utf-8")
 
     def good_chat_fn(messages, model):
-        return "| 07 | 99 | test | done | [week-07/day-99](week-07/day-99/) | todo |"
+        return "| 07 | 99 | some real description of the work done | done | [week-07/day-99](week-07/day-99/) | todo |"
 
     result = day_report.run_ritual(repo, "07", "99", chat_fn=good_chat_fn)
     assert result.verify_result.ok

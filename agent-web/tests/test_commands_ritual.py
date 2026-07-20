@@ -68,7 +68,7 @@ def test_ritual_dry_run_with_valid_draft_shows_patch_diff_no_confirm(tmp_path):
     from agent_web.services.agent_manager import AgentManager
     from agent_cli.core.sessions import SessionStore
 
-    row = "| 07 | 99 | ritual test | done | [week-07/day-99](week-07/day-99/) | todo |"
+    row = "| 07 | 99 | ritual test description long enough | done | [week-07/day-99](week-07/day-99/) | todo |"
     provider = MockProvider(response=row)
     db_path = str(tmp_path / "test_sessions.db")
     store = SessionStore(db_path)

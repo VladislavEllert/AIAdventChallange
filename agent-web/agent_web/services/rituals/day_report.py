@@ -223,6 +223,19 @@ def verify(row: str, collected: Collected) -> VerifyResult:
     if not re.search(r"\[.+?\]\(.+?\)", code_cell):
         errors.append("Код column has no markdown link — missing link")
 
+    # Regression: an empty/near-empty Задача cell passed the structural checks
+    # above (still 6 columns, still a valid link, still done/todo) and silently
+    # overwrote a real, detailed existing row with a blank one — reproduced
+    # live when collect() found nothing to report and draft() had no facts to
+    # work with. A day-progress line with no actual description is useless
+    # regardless of table-format validity, so reject it explicitly.
+    if len(task_cell) < 20:
+        errors.append(
+            f"Задача column is empty or too short ({len(task_cell)} chars) — "
+            "collect() likely found nothing to report; refusing to overwrite "
+            "an existing row with a near-blank one"
+        )
+
     if video_cell != "todo":
         # No automated source of truth for video links exists anywhere in this
         # pipeline — collect() never gathers one. Any non-'todo' claim here is
@@ -293,6 +306,16 @@ def run_ritual(repo_root: Path, week: str, day: str, *, chat_fn: ChatFn, model: 
     writes to disk and never commits — that's the caller's job, gated on
     human confirmation (commands_ritual.py for chat, main() below headless)."""
     collected = collect(repo_root, week, day)
+    if not collected.changed_files:
+        # Nothing for collect() to summarize (e.g. repo already clean/committed) —
+        # don't let draft() invent a row from zero facts. Reproduced live: an
+        # empty-facts draft passed the table-format checks and overwrote a real,
+        # detailed existing row with a blank one.
+        vr = VerifyResult(
+            ok=False,
+            errors=["collect() found no changed files — nothing to report, refusing to draft a row"],
+        )
+        return RitualResult(collected=collected, row="(нет изменений для отчёта)", verify_result=vr, patch=None)
     row = draft(collected, chat_fn=chat_fn, model=model)
     vr = verify(row, collected)
     patch = build_patch(repo_root, day, row) if vr.ok else None
